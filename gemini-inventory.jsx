@@ -239,10 +239,10 @@ function PrintLabelMenu({ content }) {
 // ─── Camera Scanner ───
 function Scanner({ onScan, onClose, inline }) {
   const videoRef = useRef(null);
-  const streamRef = useRef(null);
   const codeReaderRef = useRef(null);
   const onScanRef = useRef(onScan);
   const [manualCode, setManualCode] = useState("");
+  const [scanStatus, setScanStatus] = useState("starting");
 
   useEffect(() => {
     onScanRef.current = onScan;
@@ -250,43 +250,61 @@ function Scanner({ onScan, onClose, inline }) {
 
   useEffect(() => {
     let active = true;
-    let timeout;
-    (async () => {
+    let debounce = null;
+
+    const startScanner = async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-        if (active && videoRef.current) {
-          videoRef.current.srcObject = stream;
-          streamRef.current = stream;
+        if (window.ZXing && videoRef.current) {
+          const codeReader = new window.ZXing.BrowserMultiFormatReader();
+          codeReaderRef.current = codeReader;
           
-          if (window.ZXing) {
-            codeReaderRef.current = new window.ZXing.BrowserMultiFormatReader();
-            codeReaderRef.current.decodeFromVideoElement(videoRef.current, (res, err) => {
-               if (res && active) {
-                  if(!timeout) {
-                     onScanRef.current(res.getText());
-                     timeout = setTimeout(() => { timeout = null; }, 1000);
-                  }
-               }
-            });
+          await codeReader.decodeFromVideoDevice(null, videoRef.current, (result, err) => {
+            if (!active) return;
+            if (result) {
+              if (!debounce) {
+                setScanStatus("scanned");
+                onScanRef.current(result.getText());
+                debounce = setTimeout(() => { debounce = null; setScanStatus("scanning"); }, 1500);
+              }
+            }
+          });
+          if (active) setScanStatus("scanning");
+        } else {
+          // Fallback: just show camera without auto-scan
+          const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+          if (active && videoRef.current) {
+            videoRef.current.srcObject = stream;
           }
+          if (active) setScanStatus("manual_only");
         }
-      } catch (e) { console.error("Camera error:", e); }
-    })();
-    return () => { 
-      active = false; 
-      streamRef.current?.getTracks().forEach(t => t.stop()); 
-      if (codeReaderRef.current) codeReaderRef.current.reset();
+      } catch (e) {
+        console.error("Scanner error:", e);
+        if (active) setScanStatus("error");
+      }
+    };
+
+    startScanner();
+
+    return () => {
+      active = false;
+      try { if (codeReaderRef.current) codeReaderRef.current.reset(); } catch(e) {}
     };
   }, []);
 
   const handleManual = () => { if (manualCode.trim()) { onScan(manualCode.trim()); setManualCode(""); } };
 
+  const statusColors = { starting: COLORS.textMuted, scanning: COLORS.success, scanned: COLORS.accent, manual_only: COLORS.warning || "#f59e0b", error: COLORS.danger };
+  const statusText = { starting: "⏳ Starting camera...", scanning: "🟢 LIVE — Point at barcode or QR", scanned: "✓ Code detected!", manual_only: "⚠ Auto-scan unavailable — type code below", error: "✕ Camera error" };
+
   if (inline) {
     return (
       <div style={{ position: "relative", display: "flex", flexDirection: "column", borderRadius: 12, overflow: "hidden" }}>
+         <div style={{ fontSize: 11, padding: "6px 10px", background: COLORS.bg, color: statusColors[scanStatus], fontFamily: "'JetBrains Mono', monospace", textAlign: "center", letterSpacing: 1 }}>
+            {statusText[scanStatus]}
+         </div>
          <div style={{ height: 250, position: "relative" }}>
-           <video ref={videoRef} autoPlay playsInline style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 8 }} />
-           <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: 160, height: 160, border: `2px solid ${COLORS.primary}`, borderRadius: 12 }} />
+           <video ref={videoRef} autoPlay playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 8 }} />
+           <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: 160, height: 160, border: `2px solid ${scanStatus === "scanning" ? COLORS.success : COLORS.primary}`, borderRadius: 12, transition: "border-color 0.3s" }} />
          </div>
          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
           <input value={manualCode} onChange={e => setManualCode(e.target.value)} placeholder="Type code manually..."
