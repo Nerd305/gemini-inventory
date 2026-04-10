@@ -184,13 +184,14 @@ function printLabel(content, sizeType, type = "qr") {
   const sizes = {
     zebra: { w: "4in", h: "3in", css: "@page { size: 4in 3in; margin: 0; }" },
     epsonQR: { w: "1.5in", h: "1.5in", css: "@page { size: 1.5in 1.5in; margin: 0; }" },
-    epsonSlim: { w: "2.5in", h: "0.7in", css: "@page { size: 2.5in 0.7in; margin: 0; }" }
+    epsonSlim: { w: "2.5in", h: "0.7in", css: "@page { size: 2.5in 0.7in; margin: 0; }" },
+    letter: { w: "8.5in", h: "11in", css: "@page { size: letter; margin: 0; }" }
   };
   const size = sizes[sizeType] || sizes.zebra;
   
   let svgCode = "";
   if (type === "qr") {
-    svgCode = generateQRSVG(content, sizeType === 'epsonQR' ? 120 : (sizeType === 'zebra' ? 240 : 80));
+    svgCode = generateQRSVG(content, sizeType === 'epsonQR' ? 120 : (sizeType === 'zebra' ? 240 : (sizeType === 'letter' ? 400 : 80)));
   } else {
     const encoded = [];
     for (let i = 0; i < content.length; i++) {
@@ -225,6 +226,10 @@ function PrintLabelMenu({ content }) {
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
           <Btn small onClick={(e) => { e.stopPropagation(); printLabel(content, 'epsonSlim', 'barcode'); }} color={COLORS.surfaceAlt} style={{ border: `1px solid ${COLORS.border}`, color: COLORS.text }}>Eps Slim (2.5x0.7)</Btn>
           <span style={{ fontSize: 9, color: COLORS.textMuted }}>Trays / slim</span>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+          <Btn small onClick={(e) => { e.stopPropagation(); printLabel(content, 'letter', 'qr'); }} color={COLORS.surfaceAlt} style={{ border: `1px solid ${COLORS.border}`, color: COLORS.text }}>Standard Page</Btn>
+          <span style={{ fontSize: 9, color: COLORS.textMuted }}>Normal 8.5x11</span>
         </div>
       </div>
     </div>
