@@ -519,6 +519,33 @@ function InventoryWorkspace({ products, locations, adjustStock, addProduct, onCl
               <div style={{ fontSize: 13, color: COLORS.textDim, marginBottom: 16 }}>
                 Session Total: <span style={{fontWeight: 800, fontSize: 18, color: COLORS.text}}>{sessionCount}</span> added
               </div>
+
+              <div style={{ padding: 12, background: COLORS.bg, borderRadius: 8, marginBottom: 16, border: `1px solid ${COLORS.border}` }}>
+                <div style={{ fontSize: 11, color: COLORS.textDim, marginBottom: 8, textAlign: 'center', letterSpacing: 1 }}>MANUAL OVERRIDE</div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center' }}>
+                  {mode === "basket" ? (
+                    <>
+                      <Btn onClick={() => { adjustStock(prod.id, -150, `Removed basket at ${loc?.name || 'Direct Scan'}`, "REMOVAL"); setSessionCount(c => c - 150); }} color={COLORS.danger} small>-1 Basket</Btn>
+                      <Btn onClick={() => { adjustStock(prod.id, 150, `Added basket at ${loc?.name || 'Direct Scan'}`, "BASKET_FULL"); setSessionCount(c => c + 150); }} color={COLORS.success} small>+1 Basket</Btn>
+                    </>
+                  ) : (
+                    <>
+                      <Btn onClick={() => { adjustStock(prod.id, -1, `Manual minus at ${loc?.name || 'Direct Scan'}`, "REMOVAL"); setSessionCount(c => c - 1); }} color={COLORS.danger} small>-1</Btn>
+                      <Btn onClick={() => { adjustStock(prod.id, 1, `Manual plus at ${loc?.name || 'Direct Scan'}`, "INVENTORY_COUNT"); setSessionCount(c => c + 1); }} color={COLORS.success} small>+1</Btn>
+                      <Btn onClick={() => { adjustStock(prod.id, 5, `Manual plus at ${loc?.name || 'Direct Scan'}`, "INVENTORY_COUNT"); setSessionCount(c => c + 5); }} color={COLORS.success} small>+5</Btn>
+                      <Btn onClick={() => { adjustStock(prod.id, 10, `Manual plus at ${loc?.name || 'Direct Scan'}`, "INVENTORY_COUNT"); setSessionCount(c => c + 10); }} color={COLORS.success} small>+10</Btn>
+                    </>
+                  )}
+                  <Btn onClick={() => {
+                      const qty = parseInt(prompt("Enter amount to add (use negative number to subtract):", "1"));
+                      if (qty) {
+                          adjustStock(prod.id, qty, `Bulk counting at ${loc?.name || 'Direct Scan'}`, qty > 0 ? "INVENTORY_COUNT" : "REMOVAL");
+                          setSessionCount(c => c + qty);
+                      }
+                  }} color={COLORS.primary} small>Custom ±</Btn>
+                </div>
+              </div>
+
               <Scanner inline onScan={(code) => {
                  if (code.startsWith("TRY-")) {
                     alert("Tray scanned! Proceeding to auto-audit in full app version.");
