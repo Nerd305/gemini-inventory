@@ -619,7 +619,9 @@ export default function App() {
   }, [state]);
 
   const addLog = useCallback((entry) => {
-    update(s => ({ ...s, logs: [{ id: uid(), timestamp: now(), user: session?.user || "System", ...entry }, ...s.logs].slice(0, 5000) }));
+    const newLog = { id: uid(), timestamp: now(), user: session?.user || "System", ...entry };
+    update(s => ({ ...s, logs: [newLog, ...s.logs].slice(0, 5000) }));
+    DB.setDocRef("logs", newLog);
   }, [session, update]);
 
   if (!state) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: COLORS.bg, color: COLORS.primary, fontFamily: "'JetBrains Mono', monospace", fontSize: 18 }}>Loading Gemini Inventory...</div>;
@@ -629,8 +631,8 @@ export default function App() {
   // ─── Derived Data ───
   const products = rawProducts.map(p => {
      let matchingTrays = (trays || []).filter(t => t.productId === p.id && t.status !== "Depleted");
-     let stock = matchingTrays.reduce((sum, t) => sum + (t.quantity || 0), 0);
-     return { ...p, stock };
+     let trayStock = matchingTrays.reduce((sum, t) => sum + (t.quantity || 0), 0);
+     return { ...p, stock: (p.stock || 0) + trayStock };
   });
 
   const totalStock = products.reduce((a, p) => a + (p.stock || 0), 0);
@@ -649,10 +651,18 @@ export default function App() {
   };
 
   const adjustStock = (productId, qty, reason, type = "ADJUSTMENT") => {
+    let updatedProd = null;
     update(s => ({
       ...s,
-      products: s.products.map(p => p.id === productId ? { ...p, stock: Math.max(0, p.stock + qty), lastUpdated: now() } : p)
+      products: s.products.map(p => {
+          if (p.id === productId) {
+             updatedProd = { ...p, stock: Math.max(0, (p.stock||0) + qty), lastUpdated: now() };
+             return updatedProd;
+          }
+          return p;
+      })
     }));
+    setTimeout(() => { if(updatedProd) DB.setDocRef("products", updatedProd); }, 50);
     const prod = products.find(p => p.id === productId);
     addLog({ type, productId, detail: `${qty > 0 ? "+" : ""}${qty} ${prod?.name || productId}`, reason, qty });
   };
