@@ -234,22 +234,44 @@ function PrintLabelMenu({ content }) {
 // ─── Camera Scanner ───
 function Scanner({ onScan, onClose, inline }) {
   const videoRef = useRef(null);
-  const canvasRef = useRef(null);
   const streamRef = useRef(null);
+  const codeReaderRef = useRef(null);
+  const onScanRef = useRef(onScan);
   const [manualCode, setManualCode] = useState("");
 
   useEffect(() => {
+    onScanRef.current = onScan;
+  }, [onScan]);
+
+  useEffect(() => {
     let active = true;
+    let timeout;
     (async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
         if (active && videoRef.current) {
           videoRef.current.srcObject = stream;
           streamRef.current = stream;
+          
+          if (window.ZXing) {
+            codeReaderRef.current = new window.ZXing.BrowserMultiFormatReader();
+            codeReaderRef.current.decodeFromVideoElement(videoRef.current, (res, err) => {
+               if (res && active) {
+                  if(!timeout) {
+                     onScanRef.current(res.getText());
+                     timeout = setTimeout(() => { timeout = null; }, 1000);
+                  }
+               }
+            });
+          }
         }
       } catch (e) { console.error("Camera error:", e); }
     })();
-    return () => { active = false; streamRef.current?.getTracks().forEach(t => t.stop()); };
+    return () => { 
+      active = false; 
+      streamRef.current?.getTracks().forEach(t => t.stop()); 
+      if (codeReaderRef.current) codeReaderRef.current.reset();
+    };
   }, []);
 
   const handleManual = () => { if (manualCode.trim()) { onScan(manualCode.trim()); setManualCode(""); } };
@@ -280,7 +302,6 @@ function Scanner({ onScan, onClose, inline }) {
       <div style={{ flex: 1, position: "relative", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
         <video ref={videoRef} autoPlay playsInline style={{ width: "100%", height: "100%", objectFit: "cover" }} />
         <div style={{ position: "absolute", width: 240, height: 240, border: `3px solid ${COLORS.primary}`, borderRadius: 16 }} />
-        <canvas ref={canvasRef} style={{ display: "none" }} />
       </div>
       <div style={{ padding: 16, borderTop: `1px solid ${COLORS.border}` }}>
         <div style={{ color: COLORS.textDim, fontSize: 11, marginBottom: 8, textAlign: "center", fontFamily: "'JetBrains Mono', monospace" }}>Point camera at QR/barcode or enter code manually</div>
@@ -397,7 +418,17 @@ function InventoryWorkspace({ products, locations, adjustStock, addProduct, onCl
                    <div style={{marginTop: 16}}>
                      <Scanner inline onScan={(code) => {
                         const found = locations.find(l => l.code === code);
-                        if (found) locHandleSet(found.id); else alert("Location code not recognized.");
+                        if (found) { locHandleSet(found.id); return; }
+                        
+                        const prodFound = products.find(p => p.code === code);
+                        if (prodFound) {
+                           if (confirm(`Wrong screen! You scanned Product: ${prodFound.name}\n\nDo you want to skip selecting a location and just count this product?`)) {
+                              locHandleSet(locations.length > 0 ? locations[0].id : "UNKNOWN_LOC");
+                              setTimeout(() => prodHandleSet(prodFound.id, "single"), 50);
+                           }
+                           return;
+                        }
+                        alert("Location code not recognized.");
                      }} />
                    </div>
                  )}
@@ -432,15 +463,23 @@ function InventoryWorkspace({ products, locations, adjustStock, addProduct, onCl
             {activeLeg === 2 ? (
                <div style={{marginTop: 16}}>
                  <div style={{fontSize: 13, color: COLORS.textDim, marginBottom: 12}}>Scan Product Barcode/QR:</div>
-                 <div style={{marginBottom: 16}}>
+                 {!prodId && <div style={{marginBottom: 16}}>
                      <Scanner inline onScan={(code) => {
+                        const locFound = locations.find(l => l.code === code);
+                        if (locFound) {
+                           if (confirm(`Wrong screen! You scanned Location: ${locFound.name}\n\nDo you want to switch your active location to this?`)) {
+                              locHandleSet(locFound.id);
+                           }
+                           return;
+                        }
+                        
                         const found = products.find(p => p.code === code);
                         if (found) { setProdId(found.id); } 
                         else {
                           setModal({ type: "createProductFromScan", scannedCode: code, onCreated: (newProd) => { setProdId(newProd.id); } });
                         }
                      }} />
-                 </div>
+                 </div>}
                  <div style={{textAlign: "center", margin: "16px 0", color: COLORS.textDim, fontSize: 12, fontFamily: "'JetBrains Mono', monospace", letterSpacing:2}}>OR SEARCH</div>
                  <Select value={prodId || ""} onChange={v => setProdId(v)} options={[{value:"", label:"— Select Product —"}, ...products.map(p => ({value: p.id, label: p.name}))]} />
                  <div style={{textAlign: "center", margin: "12px 0"}}>
@@ -487,7 +526,7 @@ function InventoryWorkspace({ products, locations, adjustStock, addProduct, onCl
                  }
                  if (code === prod.code) {
                     const amt = mode === "basket" ? 150 : 1;
-                    adjustStock(prod.id, amt, `Workspace session at ${loc.name}`, mode === "basket" ? "BASKET_FULL" : "INVENTORY_COUNT");
+                    adjustStock(prod.id, amt, `Workspace session at ${loc?.name || 'Direct Scan'}`, mode === "basket" ? "BASKET_FULL" : "INVENTORY_COUNT");
                     setSessionCount(c => c + amt);
                  } else {
                     alert("Scanned code does not match active product (" + prod.name + ")!");
