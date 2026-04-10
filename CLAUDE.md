@@ -4,7 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Gemini Inventory is a single-page React inventory management app for a pharmacy/compounding facility ("Greenstone"). It tracks products, stock levels, tray locations, and inventory sessions. Deployed on Vercel.
+Gemini Inventory is a single-page React inventory management app for a pharmacy/compounding facility ("Greenstone"). It tracks products, stock levels, tray locations, and inventory sessions.
+
+**Live Production URL:** https://inventory-amber-five.vercel.app
+**GitHub Repository:** https://github.com/Nerd305/gemini-inventory
 
 ## Architecture
 
