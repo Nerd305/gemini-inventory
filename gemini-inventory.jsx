@@ -382,7 +382,7 @@ function AddTrayForm({ products, locations, onAdd, initialProdId, initialLocId }
 
 
 // ─── Inventory Workspace ───
-function InventoryWorkspace({ products, locations, adjustStock, addProduct, onClose, setModal }) {
+function InventoryWorkspace({ products, locations, trays, adjustStock, addProduct, onClose, setModal }) {
   const [locId, setLocId] = useState(null);
   const [prodId, setProdId] = useState(null);
   const [mode, setMode] = useState(null);
@@ -553,7 +553,12 @@ function InventoryWorkspace({ products, locations, adjustStock, addProduct, onCl
 
               <Scanner inline onScan={(code) => {
                  if (code.startsWith("TRY-")) {
-                    alert("Tray scanned! Proceeding to auto-audit in full app version.");
+                    const tray = (trays||[]).find(t => t.code === code);
+                    if (tray) {
+                       setModal({ type: "manageTray", tray, onVerify: () => {
+                           setSessionCount(c => c + tray.quantity);
+                       }});
+                    } else { alert("Tray not found."); }
                     return;
                  }
                  if (code === prod.code) {
@@ -668,8 +673,21 @@ export default function App() {
   };
 
   // ─── Scan Handler ───
+  const handleTrayScan = (code) => {
+      const tray = (trays||[]).find(t => t.code === code);
+      if(tray) {
+          setModal({ type: "manageTray", tray });
+      } else {
+          alert("Tray code not found in system.");
+      }
+  };
+
   const handleScan = (code) => {
     setScanning(false);
+    if (code.startsWith("TRY-")) {
+        handleTrayScan(code);
+        return;
+    }
     const prod = products.find(p => p.code === code);
     if (!prod) {
       // Check if it's a location start code
@@ -785,7 +803,7 @@ export default function App() {
 
         {/* ═══ WORKSPACE TAB ═══ */}
         {tab === "workspace" && (
-          <InventoryWorkspace products={products} locations={locations} adjustStock={adjustStock} addProduct={addProduct} setModal={setModal} onClose={() => setTab("dash")} />
+          <InventoryWorkspace products={products} locations={locations} trays={trays} adjustStock={adjustStock} addProduct={addProduct} setModal={setModal} onClose={() => setTab("dash")} />
         )}
 
         {/* ═══ SCAN TAB ═══ */}
@@ -1155,6 +1173,53 @@ export default function App() {
          <div style={{marginTop: 16}}>
            <Btn full onClick={() => setModal(null)} color={COLORS.primary}>Done</Btn>
          </div>
+      </Modal>
+
+      {/* Manage Tray */}
+      <Modal open={modal?.type === "manageTray"} onClose={() => setModal(null)} title="Manage Tray">
+        {modal?.tray && (() => {
+           const t = modal.tray;
+           const p = products.find(prod => prod.id === t.productId);
+           return (
+             <div>
+               <div style={{fontSize: 16, fontWeight: 700, marginBottom: 4}}>{p?.name || "Unknown Product"}</div>
+               <div style={{fontSize: 12, color: COLORS.textMuted, marginBottom: 16}}>{t.code} · Location: {locations.find(l=>l.id===t.locationId)?.name}</div>
+               
+               <div style={{display: "flex", gap: 8, marginBottom: 16}}>
+                 <div style={{flex: 1, padding: 12, background: COLORS.bg, border: `1px solid ${COLORS.border}`, borderRadius: 8}}>
+                    <div style={{fontSize: 11, color: COLORS.textDim}}>Items inside</div>
+                    <div style={{fontSize: 18, fontWeight: 700, color: COLORS.success}}>{t.quantity}</div>
+                 </div>
+                 <div style={{flex: 1, padding: 12, background: COLORS.bg, border: `1px solid ${COLORS.border}`, borderRadius: 8}}>
+                    <div style={{fontSize: 11, color: COLORS.textDim}}>Status</div>
+                    <div style={{fontSize: 16, fontWeight: 700, color: t.status === "Depleted" ? COLORS.danger : COLORS.primary}}>{t.status}</div>
+                 </div>
+               </div>
+
+               <div style={{display: "flex", flexDirection: "column", gap: 8}}>
+                  {modal?.onVerify && t.status !== "Depleted" && (
+                    <Btn full color={COLORS.success} onClick={() => {
+                        modal.onVerify();
+                        setModal(null);
+                    }}>Verify & Count in Session</Btn>
+                  )}
+                  {t.status !== "Depleted" && (
+                    <Btn full color={COLORS.danger} onClick={() => {
+                        const updatedTray = {...t, status: "Depleted"};
+                        update(s => ({
+                           ...s,
+                           trays: s.trays.map(x => x.id === t.id ? updatedTray : x)
+                        }));
+                        DB.setDocRef("trays", updatedTray);
+                        addLog({ type: "TRAY_DEPLETED", detail: `Tray ${t.code} depleted.` });
+                        setModal(null);
+                    }}>Empty / Deplete Tray</Btn>
+                  )}
+                  <Btn full color={COLORS.surfaceAlt} style={{border: `1px solid ${COLORS.border}`, color: COLORS.text}} onClick={() => setModal(null)}>Cancel</Btn>
+               </div>
+             </div>
+           );
+        })()}
       </Modal>
 
       {/* Location Detail */}
