@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#00d4ff"/>
+      <stop offset="100%" style="stop-color:#0066ff"/>
+    </linearGradient>
+    <linearGradient id="bolt" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffeb3b"/>
+      <stop offset="100%" style="stop-color:#ff9800"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background circle -->
+  <circle cx="512" cy="512" r="480" fill="url(#bg)"/>
+
+  <!-- Printer body -->
+  <rect x="200" y="380" width="624" height="320" rx="30" fill="white"/>
+
+  <!-- Printer top (paper feed) -->
+  <rect x="240" y="280" width="544" height="120" rx="15" fill="#f0f0f0"/>
+  <rect x="260" y="300" width="504" height="80" rx="8" fill="#e0e0e0"/>
+
+  <!-- Printer bottom (output tray) -->
+  <rect x="200" y="680" width="624" height="80" rx="15" fill="#e0e0e0"/>
+
+  <!-- Paper sheet -->
+  <rect x="280" y="340" width="464" height="200" fill="white" stroke="#ccc" stroke-width="2"/>
+
+  <!-- Lightning bolt -->
+  <path d="M540 340 L480 480 L540 480 L500 640 L580 460 L520 460 Z"
+        fill="url(#bolt)" stroke="#ff9800" stroke-width="4" stroke-linejoin="round"/>
+
+  <!-- Printer details -->
+  <circle cx="380" cy="580" r="25" fill="#333"/>
+  <circle cx="644" cy="580" r="25" fill="#333"/>
+
+  <!-- LED indicators -->
+  <circle cx="512" cy="520" r="12" fill="#00ff00"/>
+  <circle cx="560" cy="520" r="12" fill="#333"/>
+
+  <!-- Glow effect -->
+  <circle cx="540" cy="480" r="80" fill="url(#bolt)" opacity="0.3">
+    <animate attributeName="opacity" values="0.3;0.5;0.3" dur="1s" repeatCount="indefinite"/>
+  </circle>
+</svg>

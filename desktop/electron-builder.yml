@@ -1,0 +1,26 @@
+appId: com.mdexam.vialtrack-print-server
+productName: VialTrack Print Server
+directories:
+  output: dist/packaged
+  buildResources: assets
+files:
+  - "dist/main/**/*"
+  - "dist/renderer/**/*"
+  - "config/**/*"
+  - "package.json"
+extraResources:
+  - from: config/printers.json
+    to: printers.default.json
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  category: public.app-category.business
+  identity: null
+  hardenedRuntime: false
+  gatekeeperAssess: false
+  icon: assets/icon
+dmg:
+  title: VialTrack Print Server

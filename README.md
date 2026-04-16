@@ -1,34 +1,20 @@
-# Gemini Inventory
+<div align="center">
+<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+</div>
 
-Gemini Inventory is a single-page React inventory management app for a pharmacy/compounding facility ("Greenstone"). It tracks products, stock levels, tray locations, and inventory sessions entirely in the browser.
+# Run and deploy your AI Studio app
 
-## Important Links
+This contains everything you need to run your app locally.
 
-* **Live Production URL:** [https://inventory-amber-five.vercel.app](https://inventory-amber-five.vercel.app)
-* **GitHub Repository:** [https://github.com/Nerd305/gemini-inventory](https://github.com/Nerd305/gemini-inventory)
+View your app in AI Studio: https://ai.studio/apps/198437a8-7e10-4c8b-9a00-22acac4c2d1f
 
-## Architecture
+## Run Locally
 
-This is a **zero-build, two-file app**:
+**Prerequisites:**  Node.js
 
-- `index.html` — Entry point. Loads React 18 and Babel Standalone for in-browser JSX compilation. Fetches `gemini-inventory.jsx` at runtime.
-- `gemini-inventory.jsx` — The entire application. Contains all components, state management, styles, and data logic in a single file.
 
-There is no bundler, no npm, and no build step.
-
-## Technologies Used
-
-* **Frontend:** React 18 (loaded via CDN)
-* **Hosting:** Vercel
-* **Database:** Firebase Firestore
-* **AI:** Google Gemini API (for auto-categorization from photos)
-
-## Development
-
-To develop locally, serve the files with any static HTTP server:
-
-```bash
-npx serve .
-# or
-python3 -m http.server
-```
+1. Install dependencies:
+   `npm install`
+2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+3. Run the app:
+   `npm run dev`

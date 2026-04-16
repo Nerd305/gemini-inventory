@@ -1,0 +1,133 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         (request.auth.token.email == "duval.villegas@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isStaffOrAdmin() {
+      return isAuthenticated() && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'staff'] ||
+         (request.auth.token.email == "duval.villegas@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+    
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    function isValidUser() {
+      return hasRequiredFields(['email', 'role']) &&
+             request.resource.data.email is string &&
+             request.resource.data.role in ['admin', 'staff'];
+    }
+
+    function isValidLocation() {
+      return hasRequiredFields(['name', 'type', 'qrCode', 'createdAt']) &&
+             request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() < 100 &&
+             request.resource.data.type in ['fridge', 'shelf', 'cabinet'] &&
+             request.resource.data.qrCode is string && request.resource.data.qrCode.size() < 100 &&
+             request.resource.data.createdAt is string;
+    }
+
+    function isValidProduct() {
+      return hasRequiredFields(['name', 'category', 'currentStock', 'createdAt']) &&
+             request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() < 200 &&
+             request.resource.data.category is string && request.resource.data.category.size() < 100 &&
+             request.resource.data.currentStock is number && request.resource.data.currentStock >= 0 &&
+             request.resource.data.createdAt is string;
+    }
+
+    function isValidBasket() {
+      return hasRequiredFields(['productId', 'locationId', 'name', 'trayCount', 'vialsPerTray', 'looseVials', 'qrCode', 'createdAt']) &&
+             request.resource.data.productId is string &&
+             request.resource.data.locationId is string &&
+             request.resource.data.name is string &&
+             request.resource.data.trayCount is number && request.resource.data.trayCount >= 0 &&
+             request.resource.data.vialsPerTray is number && request.resource.data.vialsPerTray > 0 &&
+             request.resource.data.looseVials is number && request.resource.data.looseVials >= 0 &&
+             request.resource.data.qrCode is string && request.resource.data.qrCode.size() < 100 &&
+             request.resource.data.createdAt is string;
+    }
+
+    function isValidInventoryLog() {
+      return hasRequiredFields(['productId', 'userId', 'action', 'amount', 'timestamp']) &&
+             request.resource.data.productId is string &&
+             request.resource.data.userId is string &&
+             request.resource.data.action in ['ADD', 'REMOVE', 'ADJUST', 'COUNT'] &&
+             request.resource.data.amount is number &&
+             request.resource.data.timestamp is string;
+    }
+
+    function isValidPrintJob() {
+      return hasRequiredFields(['code', 'title', 'format', 'status', 'createdAt']) &&
+             request.resource.data.code is string &&
+             request.resource.data.title is string &&
+             request.resource.data.format in ['4x3', '1.5x1.5', '2.5x0.7', '2.5x1.5'] &&
+             request.resource.data.status in ['pending', 'completed'] &&
+             request.resource.data.createdAt is string;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidUser() && (request.auth.uid == userId || isAdmin());
+      allow update: if isAuthenticated() && isValidUser() && (isAdmin() || (request.auth.uid == userId && request.resource.data.role == resource.data.role));
+      allow delete: if isAdmin();
+    }
+
+    match /locations/{locationId} {
+      allow read: if isAuthenticated();
+      allow create: if isStaffOrAdmin() && isValidLocation();
+      allow update: if isStaffOrAdmin() && isValidLocation();
+      allow delete: if isAdmin();
+    }
+
+    match /products/{productId} {
+      allow read: if isAuthenticated();
+      allow create: if isStaffOrAdmin() && isValidProduct();
+      allow update: if isStaffOrAdmin() && isValidProduct();
+      allow delete: if isAdmin();
+    }
+
+    match /baskets/{basketId} {
+      allow read: if isAuthenticated();
+      allow create: if isStaffOrAdmin() && isValidBasket();
+      allow update: if isStaffOrAdmin() && isValidBasket();
+      allow delete: if isAdmin();
+    }
+
+    match /inventoryLogs/{logId} {
+      allow read: if isAuthenticated();
+      allow create: if isStaffOrAdmin() && isValidInventoryLog() && request.resource.data.userId == request.auth.uid;
+      allow update: if false; // Logs are immutable
+      allow delete: if isAdmin(); // Allow admins to delete for factory reset
+    }
+
+    match /printJobs/{jobId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidPrintJob();
+      allow update: if isAuthenticated() && isValidPrintJob();
+      allow delete: if isAdmin();
+    }
+  }
+}

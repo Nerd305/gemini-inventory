@@ -1,65 +1,13 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>GEMINI INVENTORY v1.1.0</title>
-    <script type="importmap">
-        {
-            "imports": {
-                "react": "https://esm.sh/react@18",
-                "react-dom/client": "https://esm.sh/react-dom@18/client"
-            }
-        }
-    </script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script type="text/javascript" src="https://unpkg.com/@zxing/library@latest"></script>
-    <style>
-        body { margin: 0; padding: 0; background: #0a0f1a; font-family: 'JetBrains Mono', monospace; }
-        #loading { color: #22d3ee; display: flex; align-items: center; justify-content: center; height: 100vh; font-size: 18px; }
-    </style>
-</head>
-<body>
-    <div id="root">
-        <div id="loading">Booting Gemini Inventory...</div>
-    </div>
-    
-    <script type="module">
-        import React from 'react';
-        import { createRoot } from 'react-dom/client';
-        
-        async function boot() {
-            try {
-                // Expose React globally for Babel-transformed code
-                window.React = React;
-                
-                // Fetch the raw JSX file we just authored
-                const res = await fetch('./gemini-inventory.jsx');
-                const jsxCode = await res.text();
-                
-                // Compile React components using Babel
-                const compiled = Babel.transform(jsxCode, { 
-                    presets: ['react']
-                }).code;
-                
-                // Create an executable module blob
-                const blob = new Blob([compiled], { type: 'application/javascript' });
-                const url = URL.createObjectURL(blob);
-                
-                // Import the default App component
-                const module = await import(url);
-                const App = module.default;
-                
-                // Mount to DOM
-                const root = createRoot(document.getElementById('root'));
-                root.render(React.createElement(App));
-            } catch (err) {
-                document.getElementById('loading').innerHTML = "Boot Error: " + err.message;
-                console.error(err);
-            }
-        }
-        
-        boot();
-    </script>
-</body>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MedInventory v1.0.2</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
 </html>
+

@@ -1,0 +1,42 @@
+{
+  "name": "vialtrack-print-server",
+  "version": "0.1.0",
+  "description": "VialTrack native macOS print server",
+  "private": true,
+  "main": "dist/main/index.js",
+  "scripts": {
+    "dev:renderer": "vite --config vite.config.ts",
+    "dev:main": "tsc -p tsconfig.main.json --watch --preserveWatchOutput",
+    "dev:electron": "wait-on http://localhost:5173 tcp:5173 && wait-on file:dist/main/index.js && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .",
+    "dev": "concurrently -k -n main,renderer,electron -c blue,green,magenta \"npm:dev:main\" \"npm:dev:renderer\" \"npm:dev:electron\"",
+    "build:renderer": "vite build --config vite.config.ts",
+    "build:main": "tsc -p tsconfig.main.json",
+    "build": "npm run build:main && npm run build:renderer",
+    "package": "npm run build && electron-builder --config electron-builder.yml",
+    "lint": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.renderer.json",
+    "setup": "npx ts-node scripts/setup-printers.ts",
+    "test-print": "npx ts-node scripts/test-print.ts"
+  },
+  "dependencies": {
+    "firebase": "^12.11.0",
+    "lucide-react": "^0.546.0",
+    "qrcode.react": "^4.2.0",
+    "react": "^19.0.0",
+    "react-barcode": "^1.6.1",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^5.0.4",
+    "concurrently": "^9.1.0",
+    "cross-env": "^7.0.3",
+    "electron": "^34.0.0",
+    "electron-builder": "^25.1.8",
+    "sharp": "^0.34.5",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0",
+    "wait-on": "^8.0.1"
+  }
+}

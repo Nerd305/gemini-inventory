@@ -1,0 +1,100 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the inventory system",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string", "enum": ["admin", "staff"] },
+        "displayName": { "type": "string" }
+      },
+      "required": ["email", "role"]
+    },
+    "Location": {
+      "title": "Location",
+      "description": "A storage location like a refrigerator or shelf",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "type": { "type": "string", "enum": ["fridge", "shelf", "cabinet"] },
+        "qrCode": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "type", "qrCode", "createdAt"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "A medication or product in inventory",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "description": { "type": "string" },
+        "reorderPoint": { "type": "number" },
+        "currentStock": { "type": "number" },
+        "barcode": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "category", "currentStock", "createdAt"]
+    },
+    "Basket": {
+      "title": "Basket",
+      "description": "A physical basket containing vials of a product",
+      "type": "object",
+      "properties": {
+        "productId": { "type": "string" },
+        "locationId": { "type": "string" },
+        "count": { "type": "number" },
+        "isFull": { "type": "boolean" },
+        "qrCode": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["productId", "locationId", "count", "isFull", "qrCode", "createdAt"]
+    },
+    "InventoryLog": {
+      "title": "InventoryLog",
+      "description": "A log of an inventory action",
+      "type": "object",
+      "properties": {
+        "productId": { "type": "string" },
+        "locationId": { "type": "string" },
+        "basketId": { "type": "string" },
+        "userId": { "type": "string" },
+        "action": { "type": "string", "enum": ["ADD", "REMOVE", "ADJUST", "COUNT"] },
+        "amount": { "type": "number" },
+        "previousCount": { "type": "number" },
+        "newCount": { "type": "number" },
+        "reason": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["productId", "userId", "action", "amount", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles"
+    },
+    "/locations/{locationId}": {
+      "schema": { "$ref": "#/entities/Location" },
+      "description": "Storage locations"
+    },
+    "/products/{productId}": {
+      "schema": { "$ref": "#/entities/Product" },
+      "description": "Products catalog"
+    },
+    "/baskets/{basketId}": {
+      "schema": { "$ref": "#/entities/Basket" },
+      "description": "Physical baskets"
+    },
+    "/inventoryLogs/{logId}": {
+      "schema": { "$ref": "#/entities/InventoryLog" },
+      "description": "Audit logs for inventory changes"
+    }
+  }
+}
