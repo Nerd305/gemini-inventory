@@ -21,7 +21,6 @@ export type LearningRecord = {
   basketId: string;
   userId: string;
   timestamp: string;
-  proactiveTeach?: boolean;
   notes?: string;
 };
 

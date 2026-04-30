@@ -67,7 +67,8 @@ service cloud.firestore {
              (!request.resource.data.keys().hasAny(['shelfId']) || request.resource.data.shelfId is string) &&
              (!request.resource.data.keys().hasAny(['shelfPosition']) || request.resource.data.shelfPosition is number) &&
              (!request.resource.data.keys().hasAny(['lastCountedAt']) || request.resource.data.lastCountedAt is string) &&
-             (!request.resource.data.keys().hasAny(['lastCountedBy']) || request.resource.data.lastCountedBy is string);
+             (!request.resource.data.keys().hasAny(['lastCountedBy']) || request.resource.data.lastCountedBy is string) &&
+             (!request.resource.data.keys().hasAny(['updatedAt']) || request.resource.data.updatedAt is string);
     }
 
     function isValidInventoryLog() {
@@ -83,9 +84,30 @@ service cloud.firestore {
       return hasRequiredFields(['code', 'title', 'format', 'status', 'createdAt']) &&
              request.resource.data.code is string &&
              request.resource.data.title is string &&
-             request.resource.data.format in ['4x3', '1.5x1.5', '2.5x0.7', '2.5x1.5'] &&
+             request.resource.data.format in ['4x3', '1.5x1.5', '2.5x0.7', '2.5x1.5', 'canon-integrated'] &&
              request.resource.data.status in ['pending', 'completed'] &&
              request.resource.data.createdAt is string;
+    }
+
+    function isValidConfig() {
+      return hasRequiredFields(['fridges']) &&
+             request.resource.data.fridges is list &&
+             (!request.resource.data.keys().hasAny(['updatedAt']) || request.resource.data.updatedAt is string) &&
+             (!request.resource.data.keys().hasAny(['updatedBy']) || request.resource.data.updatedBy is string);
+    }
+
+    function isValidCountingSession() {
+      return hasRequiredFields(['userId', 'status', 'startedAt']) &&
+             request.resource.data.userId is string &&
+             request.resource.data.status in ['active', 'in_progress', 'paused', 'completed', 'abandoned'] &&
+             request.resource.data.startedAt is string &&
+             (!request.resource.data.keys().hasAny(['userName']) || request.resource.data.userName is string) &&
+             (!request.resource.data.keys().hasAny(['locationId']) || request.resource.data.locationId is string) &&
+             (!request.resource.data.keys().hasAny(['fridgeId']) || request.resource.data.fridgeId is string) &&
+             (!request.resource.data.keys().hasAny(['activeBasketId']) || request.resource.data.activeBasketId is string || request.resource.data.activeBasketId == null) &&
+             (!request.resource.data.keys().hasAny(['completedAt']) || request.resource.data.completedAt is string) &&
+             (!request.resource.data.keys().hasAny(['progress']) || request.resource.data.progress is map) &&
+             (!request.resource.data.keys().hasAny(['countedBaskets']) || request.resource.data.countedBaskets is list);
     }
 
     // ===============================================================
@@ -97,6 +119,11 @@ service cloud.firestore {
       allow create: if isAuthenticated() && isValidUser() && (request.auth.uid == userId || isAdmin());
       allow update: if isAuthenticated() && isValidUser() && (isAdmin() || (request.auth.uid == userId && request.resource.data.role == resource.data.role));
       allow delete: if isAdmin();
+    }
+
+    match /whitelist/{email} {
+      allow read: if isAuthenticated() && (request.auth.token.email == email || request.auth.token.email.lower() == email || isAdmin());
+      allow write: if isAdmin();
     }
 
     match /locations/{locationId} {
@@ -137,7 +164,7 @@ service cloud.firestore {
     // App-wide configuration (e.g. fridges/shelves layout). Only admins write.
     match /config/{configId} {
       allow read: if isAuthenticated();
-      allow write: if isAdmin();
+      allow write: if isAdmin() && isValidConfig();
     }
 
     // Shelves live as a subcollection beneath each fridge/location.
@@ -157,7 +184,7 @@ service cloud.firestore {
     // Counting sessions track an in-progress inventory count.
     match /countingSessions/{sessionId} {
       allow read: if isAuthenticated();
-      allow create, update: if isStaffOrAdmin();
+      allow create, update: if isStaffOrAdmin() && isValidCountingSession();
       allow delete: if isAdmin();
     }
 

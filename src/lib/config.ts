@@ -11,9 +11,11 @@ export interface FridgeConfig {
 export type CapColorMap = Record<string, string>;
 
 export interface ApiBridgeConfig {
-  webhookUrl: string;
+  endpointUrl: string;
   apiKey: string;
   enabled: boolean;
+  syncDirection: 'push' | 'pull' | 'bidirectional';
+  pollIntervalMs?: number;
 }
 
 export interface AppSettings {
@@ -52,7 +54,7 @@ export function makeFridgeConfig(overrides: Partial<FridgeConfig> = {}): FridgeC
 export async function loadAppSettings(): Promise<AppSettings> {
   const snap = await getDoc(appSettingsDocRef());
   if (!snap.exists()) {
-    return { fridges: [], hudEnabled: false, capColorMap: {}, apiBridgeConfig: { webhookUrl: '', apiKey: '', enabled: false } };
+    return { fridges: [], hudEnabled: false, capColorMap: {}, apiBridgeConfig: { endpointUrl: '', apiKey: '', enabled: false, syncDirection: 'push' } };
   }
   const data = snap.data() as Partial<AppSettings> | undefined;
   return {
@@ -62,7 +64,7 @@ export async function loadAppSettings(): Promise<AppSettings> {
       data?.capColorMap && typeof data.capColorMap === 'object'
         ? (data.capColorMap as CapColorMap)
         : {},
-    apiBridgeConfig: data?.apiBridgeConfig || { webhookUrl: '', apiKey: '', enabled: false },
+    apiBridgeConfig: data?.apiBridgeConfig || { endpointUrl: '', apiKey: '', enabled: false, syncDirection: 'push' },
   };
 }
 

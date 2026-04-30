@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useMemo, useRef, useState, useEffect } from 'react';
-import { collection, addDoc, updateDoc, doc, getDocs, query, where } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, doc, getDocs, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from './AuthContext';
 
@@ -11,12 +11,18 @@ export interface ParsedScan {
   raw: string;
 }
 
+export interface SessionProgress {
+  totalVialsDelta: number;
+  basketsCount: number;
+}
+
 interface CountingSessionContextValue {
   activeLocationId: string | null;
   activeShelfId: string | null;
   activeBasketId: string | null;
   lastScan: ParsedScan | null;
   sessionId: string | null;
+  sessionProgress: SessionProgress;
   setActiveLocationId: (id: string | null) => void;
   handleScan: (qrData: string) => void;
   completeSession: () => Promise<void>;
@@ -52,6 +58,12 @@ export function CountingSessionProvider({ children }: { children: React.ReactNod
 
   const { user } = useAuth();
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionProgress, setSessionProgress] = useState<SessionProgress>({
+    totalVialsDelta: 0,
+    basketsCount: 0,
+  });
+
+  const lastScanRef = useRef<{ raw: string; at: number } | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -84,6 +96,23 @@ export function CountingSessionProvider({ children }: { children: React.ReactNod
       }
     };
   }, [user]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    const unsub = onSnapshot(
+      doc(db, 'countingSessions', sessionId),
+      (snap) => {
+        if (!snap.exists()) return;
+        const data = snap.data();
+        setSessionProgress({
+          totalVialsDelta: Number(data?.progress?.totalVials) || 0,
+          basketsCount: Array.isArray(data?.countedBaskets) ? data.countedBaskets.length : 0,
+        });
+      },
+      (err) => console.error('Session progress subscription failed', err),
+    );
+    return () => unsub();
+  }, [sessionId]);
 
   const completeSession = useCallback(async () => {
     if (sessionId) {
@@ -148,11 +177,12 @@ export function CountingSessionProvider({ children }: { children: React.ReactNod
       activeBasketId,
       lastScan,
       sessionId,
+      sessionProgress,
       setActiveLocationId,
       handleScan,
       completeSession,
     }),
-    [activeLocationId, activeShelfId, activeBasketId, lastScan, handleScan, sessionId, completeSession]
+    [activeLocationId, activeShelfId, activeBasketId, lastScan, handleScan, sessionId, sessionProgress, completeSession]
   );
 
   return <CountingSessionContext.Provider value={value}>{children}</CountingSessionContext.Provider>;

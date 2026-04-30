@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { collection, getDocs, deleteDoc, doc } from 'firebase/firestore';
+import { collection, getDocs, deleteDoc, doc, setDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/ui/button';
@@ -17,6 +17,7 @@ import {
   Save,
   Sparkles,
   Trash2,
+  Users,
 } from 'lucide-react';
 import {
   CapColorMap,
@@ -40,6 +41,11 @@ export default function Settings() {
   const [confirmText, setConfirmText] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
 
+  const [whitelist, setWhitelist] = useState<{ email: string; role: string }[]>([]);
+  const [loadingWhitelist, setLoadingWhitelist] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState<'admin' | 'staff'>('staff');
+
   const [fridges, setFridges] = useState<FridgeConfig[]>([]);
   const [originalFridges, setOriginalFridges] = useState<FridgeConfig[]>([]);
   const [loadingFridges, setLoadingFridges] = useState(false);
@@ -55,8 +61,8 @@ export default function Settings() {
   const [hudSaveStatus, setHudSaveStatus] = useState<SaveStatus>('idle');
   const [hudSaveError, setHudSaveError] = useState<string | null>(null);
 
-  const [apiBridgeConfig, setApiBridgeConfig] = useState<ApiBridgeConfig>({ webhookUrl: '', apiKey: '', enabled: false });
-  const [originalApiBridgeConfig, setOriginalApiBridgeConfig] = useState<ApiBridgeConfig>({ webhookUrl: '', apiKey: '', enabled: false });
+  const [apiBridgeConfig, setApiBridgeConfig] = useState<ApiBridgeConfig>({ endpointUrl: '', apiKey: '', enabled: false, syncDirection: 'push' });
+  const [originalApiBridgeConfig, setOriginalApiBridgeConfig] = useState<ApiBridgeConfig>({ endpointUrl: '', apiKey: '', enabled: false, syncDirection: 'push' });
   const [apiSaveStatus, setApiSaveStatus] = useState<SaveStatus>('idle');
   const [apiSaveError, setApiSaveError] = useState<string | null>(null);
 
@@ -111,6 +117,51 @@ export default function Settings() {
       cancelled = true;
     };
   }, [isAdmin]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    let cancelled = false;
+    setLoadingWhitelist(true);
+    getDocs(collection(db, 'whitelist'))
+      .then((snapshot) => {
+        if (!cancelled) {
+          setWhitelist(snapshot.docs.map(d => ({ email: d.id, role: d.data().role || 'staff' })));
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) console.error("Error loading whitelist", error);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingWhitelist(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin]);
+
+  const handleInviteUser = async () => {
+    if (!inviteEmail.trim()) return;
+    const email = inviteEmail.trim().toLowerCase();
+    try {
+      await setDoc(doc(db, 'whitelist', email), { role: inviteRole, createdAt: new Date().toISOString() });
+      setWhitelist(prev => {
+        const next = prev.filter(w => w.email !== email);
+        return [...next, { email, role: inviteRole }];
+      });
+      setInviteEmail('');
+    } catch (error: any) {
+      alert("Failed to invite user: " + error.message);
+    }
+  };
+
+  const handleRemoveWhitelist = async (email: string) => {
+    try {
+      await deleteDoc(doc(db, 'whitelist', email));
+      setWhitelist(prev => prev.filter(w => w.email !== email));
+    } catch (error: any) {
+      alert("Failed to remove user: " + error.message);
+    }
+  };
 
   const isDirty = JSON.stringify(fridges) !== JSON.stringify(originalFridges);
 
@@ -252,6 +303,81 @@ export default function Settings() {
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
       </div>
+
+      {isAdmin && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center">
+              <Users className="h-5 w-5 mr-2 text-blue-600" />
+              User Management & Whitelist
+              <HelpTooltip content="Only emails listed here can access the application. Add new staff or admins by their Google Account email." />
+            </CardTitle>
+            <CardDescription>
+              Manage who has access to your inventory system and what roles they have.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="flex items-end gap-3 flex-wrap">
+              <div className="flex-1 min-w-[200px]">
+                <Label htmlFor="inviteEmail">Google Email Address</Label>
+                <Input
+                  id="inviteEmail"
+                  placeholder="e.g. employee@gmail.com"
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label htmlFor="inviteRole">Role</Label>
+                <select
+                  id="inviteRole"
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  value={inviteRole}
+                  onChange={(e) => setInviteRole(e.target.value as 'admin' | 'staff')}
+                >
+                  <option value="staff">Staff</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+              <Button onClick={handleInviteUser} disabled={!inviteEmail.trim()}>
+                <Plus className="h-4 w-4 mr-2" />
+                Invite
+              </Button>
+            </div>
+
+            <div className="space-y-3">
+              {loadingWhitelist ? (
+                <div className="flex items-center text-sm text-gray-500">
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Loading users...
+                </div>
+              ) : whitelist.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-gray-300 p-4 text-center text-sm text-gray-500">
+                  No users whitelisted yet.
+                </div>
+              ) : (
+                whitelist.map((w) => (
+                  <div key={w.email} className="flex items-center justify-between p-3 border border-gray-200 rounded-md bg-gray-50">
+                    <div>
+                      <div className="font-medium text-gray-900">{w.email}</div>
+                      <div className="text-xs text-gray-500 uppercase tracking-wider">{w.role}</div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-red-500 hover:text-red-600 hover:bg-red-50"
+                      onClick={() => handleRemoveWhitelist(w.email)}
+                      title="Revoke access"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {isAdmin && (
         <Card>
@@ -627,9 +753,9 @@ export default function Settings() {
               <Input
                 id="webhookUrl"
                 placeholder="https://api.example.com/webhook"
-                value={apiBridgeConfig.webhookUrl}
+                value={apiBridgeConfig.endpointUrl}
                 onChange={(e) => {
-                  setApiBridgeConfig(prev => ({ ...prev, webhookUrl: e.target.value }));
+                  setApiBridgeConfig(prev => ({ ...prev, endpointUrl: e.target.value }));
                   setApiSaveStatus('idle');
                 }}
               />
@@ -648,6 +774,40 @@ export default function Settings() {
                 }}
               />
             </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="syncDirection">Sync Direction</Label>
+              <select
+                id="syncDirection"
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                value={apiBridgeConfig.syncDirection}
+                onChange={(e) => {
+                  setApiBridgeConfig(prev => ({ ...prev, syncDirection: e.target.value as 'push' | 'pull' | 'bidirectional' }));
+                  setApiSaveStatus('idle');
+                }}
+              >
+                <option value="push">Push (Outbound only)</option>
+                <option value="pull">Pull (Inbound only)</option>
+                <option value="bidirectional">Bidirectional</option>
+              </select>
+            </div>
+
+            {apiBridgeConfig.syncDirection !== 'push' && (
+              <div className="space-y-2">
+                <Label htmlFor="pollInterval">Polling Interval (ms) - For Pull requests</Label>
+                <Input
+                  id="pollInterval"
+                  type="number"
+                  placeholder="e.g. 60000"
+                  value={apiBridgeConfig.pollIntervalMs || ''}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value);
+                    setApiBridgeConfig(prev => ({ ...prev, pollIntervalMs: isNaN(val) ? undefined : val }));
+                    setApiSaveStatus('idle');
+                  }}
+                />
+              </div>
+            )}
 
             <div className="flex items-center justify-end gap-3 pt-2">
               {apiSaveStatus === 'saved' && !isApiDirty && (

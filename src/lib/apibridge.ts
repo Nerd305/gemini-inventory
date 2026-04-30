@@ -1,31 +1,13 @@
 import { doc, getDoc, updateDoc, addDoc, collection } from 'firebase/firestore';
-import { db } from './firebase';
+import { db } from '../firebase';
 
-export type ApiBridgeConfig = {
-  enabled: boolean;
-  endpointUrl: string;
-  apiKey: string;
-  syncDirection: 'push' | 'pull' | 'bidirectional';
-  pollIntervalMs?: number;
-};
-
-export async function getApiBridgeConfig(): Promise<ApiBridgeConfig> {
-  const configDoc = await getDoc(doc(db, 'config', 'appSettings'));
-  if (configDoc.exists() && configDoc.data().apiBridgeConfig) {
-    return configDoc.data().apiBridgeConfig as ApiBridgeConfig;
-  }
-  return {
-    enabled: false,
-    endpointUrl: '',
-    apiKey: '',
-    syncDirection: 'push'
-  };
-}
+import { loadAppSettings } from './config';
 
 export async function pushInventoryUpdate(productId: string, newStock: number) {
   try {
-    const config = await getApiBridgeConfig();
-    if (!config.enabled || !config.endpointUrl) return;
+    const appSettings = await loadAppSettings();
+    const config = appSettings.apiBridgeConfig;
+    if (!config || !config.enabled || !config.endpointUrl) return;
 
     await fetch(config.endpointUrl, {
       method: 'POST',

@@ -1,21 +1,24 @@
 import { Card, CardContent } from '../ui/card';
 import { formatDistanceToNow } from 'date-fns';
+import React from 'react';
 
-interface LiveSessionCardProps {
-  session: {
-    id: string;
-    userName: string;
-    status: string;
-    progress: {
-      basketsCounted: number;
-      totalVials: number;
-    };
-    startedAt: string;
-    locationId: string;
+export interface CountingSessionData {
+  id: string;
+  userName: string;
+  status: string;
+  progress: {
+    basketsCounted: number;
+    totalVials: number;
   };
+  startedAt: string;
+  locationId: string;
 }
 
-export function LiveSessionCard({ session }: LiveSessionCardProps) {
+export interface LiveSessionCardProps {
+  session: CountingSessionData;
+}
+
+export const LiveSessionCard: React.FC<LiveSessionCardProps> = ({ session }) => {
   return (
     <Card className={`border-l-4 ${session.status === 'active' ? 'border-l-teal-500' : 'border-l-amber-500'}`}>
       <CardContent className="p-4 flex flex-col gap-2">

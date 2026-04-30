@@ -163,6 +163,7 @@ export default function BottomPanel() {
       <div className="h-full w-full bg-white border-t border-gray-200 shadow-[0_-2px_8px_rgba(0,0,0,0.04)]">
         <TrayCount
           basketId={basket.id}
+          productId={basket.productId}
           slot={selectedSlot}
           initialCount={trayCounts.has(selectedSlot) ? (trayCounts.get(selectedSlot) as number) : null}
           vialsPerTray={basket.vialsPerTray}

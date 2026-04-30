@@ -2,6 +2,11 @@ import express from 'express';
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 dotenv.config();
 
@@ -81,8 +86,17 @@ app.post('/api/webhook/sale', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 3001;
+// Serve static files from the React build
+app.use(express.static(path.join(__dirname, 'dist')));
+
+// SPA fallback for React Router
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
+
+const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-  console.log(`API Bridge Server running on port ${PORT}`);
-  console.log(`Send POST requests to http://localhost:${PORT}/api/webhook/sale`);
+  console.log(`Server running on port ${PORT}`);
+  console.log(`Web app served at http://localhost:${PORT}`);
+  console.log(`Webhook endpoint at http://localhost:${PORT}/api/webhook/sale`);
 });

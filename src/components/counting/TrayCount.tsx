@@ -12,6 +12,7 @@ import { increment, arrayUnion, updateDoc } from 'firebase/firestore';
 
 interface TrayCountProps {
   basketId: string;
+  productId: string;
   slot: number;
   initialCount: number | null;
   vialsPerTray: number;
@@ -22,6 +23,7 @@ interface TrayCountProps {
 
 export default function TrayCount({
   basketId,
+  productId,
   slot,
   initialCount,
   vialsPerTray,
@@ -89,7 +91,7 @@ export default function TrayCount({
         imageBase64: lastImageRef.current,
         aiPrediction: aiPredictionRef.current || undefined,
         userFinalCount: count,
-        productId: 'unknown', // Would come from basket context in real app
+        productId: productId,
         trayId: `slot-${slot}`,
         basketId: basketId,
         userId: user.uid

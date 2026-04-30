@@ -8,10 +8,11 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
-import { Loader2, MapPin, Package, Search, Printer, ArrowRight, PlusCircle, CheckCircle2, Camera, StopCircle, Upload } from 'lucide-react';
+import { Loader2, MapPin, Package, Search, Printer, ArrowRight, PlusCircle, CheckCircle2, Camera, StopCircle, Upload, AlertTriangle } from 'lucide-react';
 import { LabelPrinter } from '../components/LabelPrinter';
 import { countVialsInTray } from '../lib/ai';
 import { pushInventoryUpdate } from '../lib/apibridge';
+import { saveLearningRecord } from '../lib/learning';
 
 // Audio helper for scanner feedback
 const playBeep = (freq = 523.25, duration = 100, vol = 0.1) => {
@@ -357,6 +358,19 @@ export default function Scanner() {
         timestamp: new Date().toISOString()
       });
 
+      if (vialDetectionImage && vialCount > 0) {
+        saveLearningRecord({
+          imageBase64: vialDetectionImage,
+          aiPrediction: vialCount,
+          userFinalCount: action === 'ADJUST' ? actionAmount : vialCount, // Approximate if not adjust
+          productId: currentProduct.id,
+          trayId: 'scanner_unknown',
+          basketId: 'scanner_unknown',
+          userId: user.uid,
+          notes: `Scanner.tsx Product Dialog Action: ${action}`
+        }).catch(console.error);
+      }
+
       playSuccess();
       setShowProductDialog(false);
       setActionAmount(1);
@@ -474,6 +488,19 @@ export default function Scanner() {
         timestamp: new Date().toISOString()
       });
 
+      if (vialDetectionImage && vialCount > 0) {
+        saveLearningRecord({
+          imageBase64: vialDetectionImage,
+          aiPrediction: vialCount,
+          userFinalCount: guidedQty,
+          productId: guidedProductId,
+          trayId: 'scanner_guided',
+          basketId: 'scanner_guided',
+          userId: user.uid,
+          notes: `Scanner.tsx Guided Count`
+        }).catch(console.error);
+      }
+
       playSuccess();
       setGuidedStep('CONTAINER');
       setGuidedProductId('');
@@ -516,11 +543,24 @@ export default function Scanner() {
   return (
     <div className="space-y-6 max-w-2xl mx-auto">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-900">Inventory Scanner</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Inventory Scanner (Deprecated)</h1>
         <div className="flex space-x-2">
           <div className={`h-2 w-8 rounded-full ${step >= 1 ? 'bg-blue-600' : 'bg-gray-200'}`} />
           <div className={`h-2 w-8 rounded-full ${step >= 2 ? 'bg-blue-600' : 'bg-gray-200'}`} />
           <div className={`h-2 w-8 rounded-full ${step >= 3 ? 'bg-blue-600' : 'bg-gray-200'}`} />
+        </div>
+      </div>
+      
+      <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4">
+        <div className="flex">
+          <div className="flex-shrink-0">
+            <AlertTriangle className="h-5 w-5 text-yellow-400" aria-hidden="true" />
+          </div>
+          <div className="ml-3">
+            <p className="text-sm text-yellow-700">
+              <strong>Deprecation Notice:</strong> The "General" and "Guided" counting flows on this page are being deprecated. For all inventory counting, please use the new <a href="/count" className="font-medium underline hover:text-yellow-600">Start Count</a> feature. This page will soon be restricted to Basket Setup and Reassignment tasks only.
+            </p>
+          </div>
         </div>
       </div>
 

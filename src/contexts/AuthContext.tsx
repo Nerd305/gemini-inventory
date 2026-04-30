@@ -30,11 +30,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
+        const email = currentUser.email || 'local@test.com';
         const isBootstrapAdmin = 
-          currentUser.email === 'duval.villegas@mdexam.com' || 
-          currentUser.email === 'duval.villegas@gmail.com';
+          email === 'duval.villegas@mdexam.com' || 
+          email === 'duval.villegas@gmail.com';
         const userDocRef = doc(db, 'users', currentUser.uid);
         const userDoc = await getDoc(userDocRef);
+        
         if (userDoc.exists()) {
           const existingRole = userDoc.data().role as 'admin' | 'staff' | undefined;
           if (isBootstrapAdmin && existingRole !== 'admin') {
@@ -44,13 +46,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setRole(existingRole ?? 'staff');
           }
         } else {
-          const newRole = isBootstrapAdmin ? 'admin' : 'admin'; // Grant admin locally if needed
-          await setDoc(userDocRef, {
-            email: currentUser.email || 'local@test.com',
-            displayName: currentUser.displayName || 'Local Tester',
-            role: newRole,
-          });
-          setRole(newRole);
+          // User is new, check whitelist
+          if (isBootstrapAdmin) {
+            await setDoc(userDocRef, {
+              email: email,
+              displayName: currentUser.displayName || 'Local Tester',
+              role: 'admin',
+            });
+            setRole('admin');
+          } else {
+            // Check whitelist
+            const whitelistDocRef = doc(db, 'whitelist', email.toLowerCase());
+            const whitelistDoc = await getDoc(whitelistDocRef);
+            
+            if (whitelistDoc.exists()) {
+              const role = whitelistDoc.data().role || 'staff';
+              await setDoc(userDocRef, {
+                email: email,
+                displayName: currentUser.displayName || 'Whitelisted User',
+                role: role,
+              });
+              setRole(role as 'admin' | 'staff');
+            } else {
+              // Not whitelisted!
+              alert('Access Denied. Your email is not on the authorized whitelist. Please ask an Administrator for an invite.');
+              await signOut(auth);
+              setUser(null);
+              setRole(null);
+            }
+          }
         }
       } else {
         setRole(null);

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, MapPin, StopCircle } from 'lucide-react';
+import { ArrowLeft, Boxes, MapPin, StopCircle } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Button } from '../components/ui/button';
@@ -106,7 +106,8 @@ function CameraView() {
 
 function TopBar({ onEndSession }: { onEndSession: () => void }) {
   const navigate = useNavigate();
-  const { activeShelfId, activeBasketId } = useCountingSession();
+  const { activeShelfId, activeBasketId, sessionProgress } = useCountingSession();
+  const deltaSign = sessionProgress.totalVialsDelta > 0 ? '+' : '';
 
   return (
     <div className="flex items-center gap-3 bg-gray-900 text-white px-3 h-12 shrink-0 pt-safe box-content">
@@ -139,8 +140,21 @@ function TopBar({ onEndSession }: { onEndSession: () => void }) {
           )}
         </div>
       </div>
-      <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-purple-500/20 text-purple-200 rounded-full text-xs font-medium ml-2 animate-pulse">
-        <span>🧠</span> Learning
+      <div className="hidden sm:flex items-center gap-2 ml-2">
+        <div
+          className="flex items-center gap-1.5 px-2.5 py-1 bg-teal-500/20 text-teal-200 rounded-full text-xs font-medium tabular-nums"
+          title="Baskets touched in this session"
+        >
+          <Boxes className="h-3 w-3" />
+          {sessionProgress.basketsCount} baskets
+        </div>
+        <div
+          className="flex items-center gap-1.5 px-2.5 py-1 bg-purple-500/20 text-purple-200 rounded-full text-xs font-medium tabular-nums"
+          title="Net vial change vs. previous count"
+        >
+          Δ {deltaSign}
+          {sessionProgress.totalVialsDelta} vials
+        </div>
       </div>
       <Button
         variant="ghost"

@@ -150,13 +150,22 @@
       "description": "A captured sample (image + label) used to train the vial-detection model",
       "type": "object",
       "properties": {
-        "imageUrl": { "type": "string" },
-        "predictedCount": { "type": "number" },
-        "actualCount": { "type": "number" },
+        "imageBase64": { "type": "string" },
+        "aiPrediction": { "type": "number" },
+        "userFinalCount": { "type": "number" },
+        "delta": { "type": "number" },
+        "capColors": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "productId": { "type": "string" },
+        "trayId": { "type": "string" },
+        "basketId": { "type": "string" },
         "userId": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "timestamp": { "type": "string", "format": "date-time" },
+        "notes": { "type": "string" }
       },
-      "required": ["createdAt"]
+      "required": ["userFinalCount", "delta", "productId", "trayId", "basketId", "userId", "timestamp"]
     }
   },
   "firestore": {
