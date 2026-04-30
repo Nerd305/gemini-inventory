@@ -53,6 +53,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               displayName: currentUser.displayName || 'Local Tester',
               role: 'admin',
             });
+            // Also seed into whitelist so they show in admin UI
+            const wlRef = doc(db, 'whitelist', email.toLowerCase());
+            const wlDoc = await getDoc(wlRef);
+            if (!wlDoc.exists()) {
+              await setDoc(wlRef, { role: 'admin', createdAt: new Date().toISOString(), isBootstrap: true });
+            }
             setRole('admin');
           } else {
             // Check whitelist

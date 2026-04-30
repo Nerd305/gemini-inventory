@@ -15,8 +15,10 @@ import {
   Plus,
   Refrigerator,
   Save,
+  Shield,
   Sparkles,
   Trash2,
+  UserCog,
   Users,
 } from 'lucide-react';
 import {
@@ -33,6 +35,8 @@ import { HelpTooltip } from '../components/HelpTooltip';
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
+const BOOTSTRAP_ADMINS = ['duval.villegas@gmail.com', 'duval.villegas@mdexam.com'];
+
 export default function Settings() {
   const { user, role } = useAuth();
   const isAdmin = role === 'admin';
@@ -42,6 +46,7 @@ export default function Settings() {
   const [isDeleting, setIsDeleting] = useState(false);
 
   const [whitelist, setWhitelist] = useState<{ email: string; role: string }[]>([]);
+  const [registeredUsers, setRegisteredUsers] = useState<{ uid: string; email: string; role: string; displayName: string }[]>([]);
   const [loadingWhitelist, setLoadingWhitelist] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'admin' | 'staff'>('staff');
@@ -122,14 +127,22 @@ export default function Settings() {
     if (!isAdmin) return;
     let cancelled = false;
     setLoadingWhitelist(true);
-    getDocs(collection(db, 'whitelist'))
-      .then((snapshot) => {
-        if (!cancelled) {
-          setWhitelist(snapshot.docs.map(d => ({ email: d.id, role: d.data().role || 'staff' })));
-        }
+    Promise.all([
+      getDocs(collection(db, 'whitelist')),
+      getDocs(collection(db, 'users')),
+    ])
+      .then(([wlSnapshot, usersSnapshot]) => {
+        if (cancelled) return;
+        setWhitelist(wlSnapshot.docs.map(d => ({ email: d.id, role: d.data().role || 'staff' })));
+        setRegisteredUsers(usersSnapshot.docs.map(d => ({
+          uid: d.id,
+          email: d.data().email || '',
+          role: d.data().role || 'staff',
+          displayName: d.data().displayName || '',
+        })));
       })
       .catch((error) => {
-        if (!cancelled) console.error("Error loading whitelist", error);
+        if (!cancelled) console.error("Error loading whitelist/users", error);
       })
       .finally(() => {
         if (!cancelled) setLoadingWhitelist(false);
@@ -155,11 +168,34 @@ export default function Settings() {
   };
 
   const handleRemoveWhitelist = async (email: string) => {
+    if (BOOTSTRAP_ADMINS.includes(email.toLowerCase())) {
+      alert('This is a protected system administrator and cannot be removed.');
+      return;
+    }
     try {
       await deleteDoc(doc(db, 'whitelist', email));
       setWhitelist(prev => prev.filter(w => w.email !== email));
     } catch (error: any) {
       alert("Failed to remove user: " + error.message);
+    }
+  };
+
+  const handleChangeWhitelistRole = async (email: string, newRole: 'admin' | 'staff') => {
+    if (BOOTSTRAP_ADMINS.includes(email.toLowerCase()) && newRole !== 'admin') {
+      alert('Bootstrap administrators cannot be demoted.');
+      return;
+    }
+    try {
+      await setDoc(doc(db, 'whitelist', email), { role: newRole }, { merge: true });
+      setWhitelist(prev => prev.map(w => w.email === email ? { ...w, role: newRole } : w));
+      // Also update the registered user doc if they exist
+      const matchedUser = registeredUsers.find(u => u.email.toLowerCase() === email.toLowerCase());
+      if (matchedUser) {
+        await setDoc(doc(db, 'users', matchedUser.uid), { role: newRole }, { merge: true });
+        setRegisteredUsers(prev => prev.map(u => u.uid === matchedUser.uid ? { ...u, role: newRole } : u));
+      }
+    } catch (error: any) {
+      alert("Failed to change role: " + error.message);
     }
   };
 
@@ -317,6 +353,7 @@ export default function Settings() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
+            {/* Invite form */}
             <div className="flex items-end gap-3 flex-wrap">
               <div className="flex-1 min-w-[200px]">
                 <Label htmlFor="inviteEmail">Google Email Address</Label>
@@ -325,6 +362,7 @@ export default function Settings() {
                   placeholder="e.g. employee@gmail.com"
                   value={inviteEmail}
                   onChange={(e) => setInviteEmail(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleInviteUser(); }}
                 />
               </div>
               <div>
@@ -345,7 +383,12 @@ export default function Settings() {
               </Button>
             </div>
 
+            {/* Whitelist */}
             <div className="space-y-3">
+              <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                <Shield className="h-4 w-4 text-blue-600" />
+                Authorized Users ({whitelist.length})
+              </div>
               {loadingWhitelist ? (
                 <div className="flex items-center text-sm text-gray-500">
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -353,28 +396,91 @@ export default function Settings() {
                 </div>
               ) : whitelist.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-gray-300 p-4 text-center text-sm text-gray-500">
-                  No users whitelisted yet.
+                  No users whitelisted yet. Use the form above to invite users.
                 </div>
               ) : (
-                whitelist.map((w) => (
-                  <div key={w.email} className="flex items-center justify-between p-3 border border-gray-200 rounded-md bg-gray-50">
-                    <div>
-                      <div className="font-medium text-gray-900">{w.email}</div>
-                      <div className="text-xs text-gray-500 uppercase tracking-wider">{w.role}</div>
+                whitelist.map((w) => {
+                  const isBootstrap = BOOTSTRAP_ADMINS.includes(w.email.toLowerCase());
+                  const registered = registeredUsers.find(u => u.email.toLowerCase() === w.email.toLowerCase());
+                  return (
+                    <div key={w.email} className={`flex items-center justify-between p-3 border rounded-md ${isBootstrap ? 'border-blue-200 bg-blue-50/50' : 'border-gray-200 bg-gray-50'}`}>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-gray-900 truncate">{w.email}</span>
+                          {isBootstrap && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full shrink-0">
+                              <Shield className="h-3 w-3" /> SYSTEM
+                            </span>
+                          )}
+                          {registered && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full shrink-0">
+                              ACTIVE
+                            </span>
+                          )}
+                        </div>
+                        {registered?.displayName && (
+                          <div className="text-xs text-gray-500 truncate">{registered.displayName}</div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0 ml-2">
+                        <select
+                          className="h-8 rounded-md border border-input bg-background px-2 text-xs ring-offset-background focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                          value={w.role}
+                          disabled={isBootstrap}
+                          onChange={(e) => handleChangeWhitelistRole(w.email, e.target.value as 'admin' | 'staff')}
+                          title={isBootstrap ? 'System admin — role cannot be changed' : 'Change role'}
+                        >
+                          <option value="staff">Staff</option>
+                          <option value="admin">Admin</option>
+                        </select>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-red-500 hover:text-red-600 hover:bg-red-50"
+                          onClick={() => handleRemoveWhitelist(w.email)}
+                          title={isBootstrap ? 'System admin — cannot be removed' : 'Revoke access'}
+                          disabled={isBootstrap}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="text-red-500 hover:text-red-600 hover:bg-red-50"
-                      onClick={() => handleRemoveWhitelist(w.email)}
-                      title="Revoke access"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
+
+            {/* Registered users not in whitelist */}
+            {registeredUsers.filter(u => !whitelist.some(w => w.email.toLowerCase() === u.email.toLowerCase())).length > 0 && (
+              <div className="space-y-3 pt-2 border-t border-gray-200">
+                <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                  <UserCog className="h-4 w-4 text-amber-600" />
+                  Registered Users (not in whitelist)
+                </div>
+                {registeredUsers
+                  .filter(u => !whitelist.some(w => w.email.toLowerCase() === u.email.toLowerCase()))
+                  .map((u) => (
+                    <div key={u.uid} className="flex items-center justify-between p-3 border border-amber-200 rounded-md bg-amber-50/30">
+                      <div>
+                        <div className="font-medium text-gray-900">{u.email}</div>
+                        <div className="text-xs text-gray-500">{u.displayName || 'No display name'} · <span className="uppercase tracking-wider">{u.role}</span></div>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setInviteEmail(u.email);
+                          setInviteRole(u.role as 'admin' | 'staff');
+                        }}
+                        title="Add to whitelist"
+                      >
+                        <Plus className="h-4 w-4 mr-1" />
+                        Whitelist
+                      </Button>
+                    </div>
+                  ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
