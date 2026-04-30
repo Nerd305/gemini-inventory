@@ -112,7 +112,13 @@ export default function Settings() {
       })
       .catch((error) => {
         if (cancelled) return;
-        setAiStatsError(error instanceof Error ? error.message : 'Failed to load AI stats');
+        const raw = error instanceof Error ? error.message : String(error);
+        const code = (error as { code?: string })?.code;
+        const friendly =
+          code === 'permission-denied' || /insufficient permissions/i.test(raw)
+            ? 'Firestore rules deny reads on learningData. Redeploy firestore.rules with `firebase deploy --only firestore:rules`.'
+            : raw;
+        setAiStatsError(friendly);
         handleFirestoreError(error, OperationType.GET, 'learningData');
       })
       .finally(() => {

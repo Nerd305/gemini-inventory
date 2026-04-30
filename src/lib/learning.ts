@@ -1,11 +1,8 @@
 import {
   addDoc,
   collection,
-  getCountFromServer,
-  getAggregateFromServer,
   getDocs,
   query,
-  sum,
   where,
 } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -81,28 +78,30 @@ function bucketByWeek(records: LearningRecord[], now: number): WeeklyTrend[] {
 export async function loadAiStats(): Promise<AiStats> {
   const col = collection(db, 'learningData');
 
-  const [countSnap, sumSnap] = await Promise.all([
-    getCountFromServer(col),
-    getAggregateFromServer(col, { vialsCounted: sum('userFinalCount') }),
-  ]);
-
   const now = Date.now();
   const since = new Date(now - 4 * WEEK_MS).toISOString();
   const recentSnap = await getDocs(query(col, where('timestamp', '>=', since)));
-  const recent = recentSnap.docs
-    .map((d) => d.data() as LearningRecord)
-    .filter((r) => typeof r.aiPrediction === 'number');
+  const recentAll = recentSnap.docs.map((d) => d.data() as LearningRecord);
+  const recentWithPrediction = recentAll.filter((r) => typeof r.aiPrediction === 'number');
+
+  const vialsCounted = recentAll.reduce(
+    (acc, r) => acc + (Number.isFinite(r.userFinalCount) ? r.userFinalCount : 0),
+    0,
+  );
 
   const accuracyPct =
-    recent.length === 0
+    recentWithPrediction.length === 0
       ? null
-      : Math.round((100 * recent.filter((r) => Math.abs(r.delta) <= 1).length) / recent.length);
+      : Math.round(
+          (100 * recentWithPrediction.filter((r) => Math.abs(r.delta) <= 1).length) /
+            recentWithPrediction.length,
+        );
 
   return {
-    totalSamples: countSnap.data().count,
-    vialsCounted: Number(sumSnap.data().vialsCounted) || 0,
+    totalSamples: recentAll.length,
+    vialsCounted,
     accuracyPct,
-    weeklyTrend: bucketByWeek(recent, now),
+    weeklyTrend: bucketByWeek(recentWithPrediction, now),
     model: 'gemini-2.5-flash',
   };
 }
