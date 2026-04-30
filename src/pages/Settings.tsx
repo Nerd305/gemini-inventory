@@ -10,6 +10,7 @@ import { Label } from '../components/ui/label';
 import {
   Activity,
   AlertTriangle,
+  AtSign,
   Eye,
   Loader2,
   Plus,
@@ -46,6 +47,7 @@ export default function Settings() {
   const [isDeleting, setIsDeleting] = useState(false);
 
   const [whitelist, setWhitelist] = useState<{ email: string; role: string }[]>([]);
+  const [domainWhitelist, setDomainWhitelist] = useState<{ domain: string; role: string }[]>([]);
   const [registeredUsers, setRegisteredUsers] = useState<{ uid: string; email: string; role: string; displayName: string }[]>([]);
   const [loadingWhitelist, setLoadingWhitelist] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
@@ -129,11 +131,13 @@ export default function Settings() {
     setLoadingWhitelist(true);
     Promise.all([
       getDocs(collection(db, 'whitelist')),
+      getDocs(collection(db, 'whitelistDomains')),
       getDocs(collection(db, 'users')),
     ])
-      .then(([wlSnapshot, usersSnapshot]) => {
+      .then(([wlSnapshot, domainSnapshot, usersSnapshot]) => {
         if (cancelled) return;
         setWhitelist(wlSnapshot.docs.map(d => ({ email: d.id, role: d.data().role || 'staff' })));
+        setDomainWhitelist(domainSnapshot.docs.map(d => ({ domain: d.id, role: d.data().role || 'staff' })));
         setRegisteredUsers(usersSnapshot.docs.map(d => ({
           uid: d.id,
           email: d.data().email || '',
@@ -152,18 +156,48 @@ export default function Settings() {
     };
   }, [isAdmin]);
 
+  // Classify the invite input. "@foo.com" or bare "foo.com" → domain entry;
+  // anything else with an "@" plus local-part → individual email.
+  const parseInviteInput = (raw: string): { kind: 'email'; value: string } | { kind: 'domain'; value: string } | { kind: 'invalid' } => {
+    const trimmed = raw.trim().toLowerCase();
+    if (!trimmed) return { kind: 'invalid' };
+    if (trimmed.startsWith('@')) {
+      const domain = trimmed.slice(1);
+      return domain.includes('.') ? { kind: 'domain', value: domain } : { kind: 'invalid' };
+    }
+    if (!trimmed.includes('@')) {
+      return trimmed.includes('.') ? { kind: 'domain', value: trimmed } : { kind: 'invalid' };
+    }
+    const at = trimmed.indexOf('@');
+    const local = trimmed.slice(0, at);
+    const domain = trimmed.slice(at + 1);
+    if (!local || !domain.includes('.')) return { kind: 'invalid' };
+    return { kind: 'email', value: trimmed };
+  };
+
+  const inviteParse = parseInviteInput(inviteEmail);
+
   const handleInviteUser = async () => {
-    if (!inviteEmail.trim()) return;
-    const email = inviteEmail.trim().toLowerCase();
+    if (inviteParse.kind === 'invalid') return;
     try {
-      await setDoc(doc(db, 'whitelist', email), { role: inviteRole, createdAt: new Date().toISOString() });
-      setWhitelist(prev => {
-        const next = prev.filter(w => w.email !== email);
-        return [...next, { email, role: inviteRole }];
-      });
+      if (inviteParse.kind === 'domain') {
+        const domain = inviteParse.value;
+        await setDoc(doc(db, 'whitelistDomains', domain), { role: inviteRole, createdAt: new Date().toISOString() });
+        setDomainWhitelist(prev => {
+          const next = prev.filter(d => d.domain !== domain);
+          return [...next, { domain, role: inviteRole }];
+        });
+      } else {
+        const email = inviteParse.value;
+        await setDoc(doc(db, 'whitelist', email), { role: inviteRole, createdAt: new Date().toISOString() });
+        setWhitelist(prev => {
+          const next = prev.filter(w => w.email !== email);
+          return [...next, { email, role: inviteRole }];
+        });
+      }
       setInviteEmail('');
     } catch (error: any) {
-      alert("Failed to invite user: " + error.message);
+      alert("Failed to save: " + error.message);
     }
   };
 
@@ -177,6 +211,24 @@ export default function Settings() {
       setWhitelist(prev => prev.filter(w => w.email !== email));
     } catch (error: any) {
       alert("Failed to remove user: " + error.message);
+    }
+  };
+
+  const handleRemoveDomain = async (domain: string) => {
+    try {
+      await deleteDoc(doc(db, 'whitelistDomains', domain));
+      setDomainWhitelist(prev => prev.filter(d => d.domain !== domain));
+    } catch (error: any) {
+      alert("Failed to remove domain: " + error.message);
+    }
+  };
+
+  const handleChangeDomainRole = async (domain: string, newRole: 'admin' | 'staff') => {
+    try {
+      await setDoc(doc(db, 'whitelistDomains', domain), { role: newRole }, { merge: true });
+      setDomainWhitelist(prev => prev.map(d => d.domain === domain ? { ...d, role: newRole } : d));
+    } catch (error: any) {
+      alert("Failed to change role: " + error.message);
     }
   };
 
@@ -346,7 +398,7 @@ export default function Settings() {
             <CardTitle className="flex items-center">
               <Users className="h-5 w-5 mr-2 text-blue-600" />
               User Management & Whitelist
-              <HelpTooltip content="Only emails listed here can access the application. Add new staff or admins by their Google Account email." />
+              <HelpTooltip content="Grant access by individual email or by entire domain. Anyone signing in with a Google account that matches an authorized email or domain will be admitted with the assigned role." />
             </CardTitle>
             <CardDescription>
               Manage who has access to your inventory system and what roles they have.
@@ -356,14 +408,17 @@ export default function Settings() {
             {/* Invite form */}
             <div className="flex items-end gap-3 flex-wrap">
               <div className="flex-1 min-w-[200px]">
-                <Label htmlFor="inviteEmail">Google Email Address</Label>
+                <Label htmlFor="inviteEmail">Email or Domain</Label>
                 <Input
                   id="inviteEmail"
-                  placeholder="e.g. employee@gmail.com"
+                  placeholder="employee@gmail.com or @mdexam.com"
                   value={inviteEmail}
                   onChange={(e) => setInviteEmail(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') handleInviteUser(); }}
                 />
+                <p className="mt-1 text-xs text-gray-500">
+                  Tip: enter <code className="font-mono">@yourcompany.com</code> to authorize every email at that domain.
+                </p>
               </div>
               <div>
                 <Label htmlFor="inviteRole">Role</Label>
@@ -377,9 +432,9 @@ export default function Settings() {
                   <option value="admin">Admin</option>
                 </select>
               </div>
-              <Button onClick={handleInviteUser} disabled={!inviteEmail.trim()}>
+              <Button onClick={handleInviteUser} disabled={inviteParse.kind === 'invalid'}>
                 <Plus className="h-4 w-4 mr-2" />
-                Invite
+                {inviteParse.kind === 'domain' ? 'Whitelist Domain' : 'Invite'}
               </Button>
             </div>
 
@@ -447,6 +502,52 @@ export default function Settings() {
                     </div>
                   );
                 })
+              )}
+            </div>
+
+            {/* Authorized domains */}
+            <div className="space-y-3 pt-2 border-t border-gray-200">
+              <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                <AtSign className="h-4 w-4 text-blue-600" />
+                Authorized Domains ({domainWhitelist.length})
+              </div>
+              {loadingWhitelist ? null : domainWhitelist.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-gray-300 p-4 text-center text-sm text-gray-500">
+                  No domains whitelisted. Enter <code className="font-mono">@yourcompany.com</code> above to authorize a whole domain at once.
+                </div>
+              ) : (
+                domainWhitelist.map((d) => (
+                  <div key={d.domain} className="flex items-center justify-between p-3 border border-gray-200 rounded-md bg-gray-50">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-gray-900 truncate">@{d.domain}</span>
+                      </div>
+                      <div className="text-xs text-gray-500 truncate">
+                        Anyone with an email at this domain can sign in as {d.role}.
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0 ml-2">
+                      <select
+                        className="h-8 rounded-md border border-input bg-background px-2 text-xs ring-offset-background focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        value={d.role}
+                        onChange={(e) => handleChangeDomainRole(d.domain, e.target.value as 'admin' | 'staff')}
+                        title="Change default role for this domain"
+                      >
+                        <option value="staff">Staff</option>
+                        <option value="admin">Admin</option>
+                      </select>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="text-red-500 hover:text-red-600 hover:bg-red-50"
+                        onClick={() => handleRemoveDomain(d.domain)}
+                        title="Revoke domain access"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))
               )}
             </div>
 

@@ -11,14 +11,16 @@ service cloud.firestore {
     
     function isAdmin() {
       return isAuthenticated() &&
-        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-         (request.auth.token.email in ["duval.villegas@mdexam.com", "duval.villegas@gmail.com"] && request.auth.token.email_verified == true));
+        ((request.auth.token.email in ["duval.villegas@mdexam.com", "duval.villegas@gmail.com"] && request.auth.token.email_verified == true) ||
+         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'));
     }
 
     function isStaffOrAdmin() {
       return isAuthenticated() &&
-        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'staff'] ||
-         (request.auth.token.email in ["duval.villegas@mdexam.com", "duval.villegas@gmail.com"] && request.auth.token.email_verified == true));
+        ((request.auth.token.email in ["duval.villegas@mdexam.com", "duval.villegas@gmail.com"] && request.auth.token.email_verified == true) ||
+         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'staff']));
     }
 
     function hasRequiredFields(fields) {
@@ -123,6 +125,15 @@ service cloud.firestore {
 
     match /whitelist/{email} {
       allow read: if isAuthenticated() && (request.auth.token.email == email || request.auth.token.email.lower() == email || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    // Domain-level whitelist: any signed-in user whose email ends in @{domain}
+    // is granted the configured role. Doc IDs are the lowercase domain
+    // (e.g. "mdexam.com"). Reads are open to authenticated users so that
+    // sign-in can self-check; writes are admin-only.
+    match /whitelistDomains/{domain} {
+      allow read: if isAuthenticated();
       allow write: if isAdmin();
     }
 

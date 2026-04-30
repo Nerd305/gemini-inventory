@@ -93,20 +93,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
             setRole('admin');
           } else {
-            // Check whitelist
-            const whitelistDocRef = doc(db, 'whitelist', email.toLowerCase());
-            const whitelistDoc = await getDoc(whitelistDocRef);
-            
+            // Check email whitelist first, then fall back to the domain whitelist.
+            const lowerEmail = email.toLowerCase();
+            const whitelistDoc = await getDoc(doc(db, 'whitelist', lowerEmail));
+
+            let assignedRole: 'admin' | 'staff' | null = null;
             if (whitelistDoc.exists()) {
-              const role = whitelistDoc.data().role || 'staff';
+              assignedRole = (whitelistDoc.data().role as 'admin' | 'staff') || 'staff';
+            } else {
+              const domain = lowerEmail.split('@')[1];
+              if (domain) {
+                const domainDoc = await getDoc(doc(db, 'whitelistDomains', domain));
+                if (domainDoc.exists()) {
+                  assignedRole = (domainDoc.data().role as 'admin' | 'staff') || 'staff';
+                }
+              }
+            }
+
+            if (assignedRole) {
               await setDoc(userDocRef, {
                 email: email,
                 displayName: currentUser.displayName || 'Whitelisted User',
-                role: role,
+                role: assignedRole,
               });
-              setRole(role as 'admin' | 'staff');
+              setRole(assignedRole);
             } else {
-              // Not whitelisted!
               alert('Access Denied. Your email is not on the authorized whitelist. Please ask an Administrator for an invite.');
               await signOut(auth);
               setUser(null);
