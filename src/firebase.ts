@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { browserLocalPersistence, getAuth, indexedDBLocalPersistence, setPersistence } from 'firebase/auth';
 import { getFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
@@ -14,6 +14,15 @@ enableIndexedDbPersistence(db).catch((err) => {
   }
 });
 export const auth = getAuth(app);
+
+// Prefer IndexedDB (then localStorage) for auth state. iOS Safari partitions
+// sessionStorage on third-party domains, which breaks the default redirect
+// flow with the "missing initial state" error.
+setPersistence(auth, indexedDBLocalPersistence).catch(() => {
+  setPersistence(auth, browserLocalPersistence).catch((err) => {
+    console.warn('Failed to set Firebase auth persistence:', err);
+  });
+});
 
 export enum OperationType {
   CREATE = 'create',

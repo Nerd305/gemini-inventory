@@ -1,7 +1,26 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { User, onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
+import {
+  User,
+  onAuthStateChanged,
+  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
+  GoogleAuthProvider,
+  signOut,
+} from 'firebase/auth';
 import { auth, db } from '../firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
+
+const isMobileBrowser = () => {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  // iOS Safari (including iPad on iPadOS reporting as Mac with touch) and
+  // Android browsers: popup-based OAuth is unreliable, prefer redirect.
+  const isIOS = /iPad|iPhone|iPod/.test(ua) ||
+    (ua.includes('Mac') && typeof document !== 'undefined' && 'ontouchend' in document);
+  const isAndroid = /Android/i.test(ua);
+  return isIOS || isAndroid;
+};
 
 interface AuthContextType {
   user: User | null;
@@ -27,6 +46,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Resolve any pending mobile redirect sign-in so onAuthStateChanged fires
+    // with the freshly signed-in user. Errors here surface real auth failures
+    // (e.g., unauthorized domain) that would otherwise be silent.
+    getRedirectResult(auth).catch((error: any) => {
+      if (error?.code === 'auth/no-auth-event') return;
+      console.error('Redirect sign-in error:', error);
+      if (error?.code === 'auth/unauthorized-domain') {
+        alert('Google Sign-In failed: this domain is not authorized in Firebase.\n\nAdd it under Authentication → Settings → Authorized Domains.');
+      } else if (error?.message) {
+        alert('Sign-In failed: ' + error.message);
+      }
+    });
+
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
@@ -92,13 +124,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signIn = async () => {
+    const provider = new GoogleAuthProvider();
     try {
-      const provider = new GoogleAuthProvider();
+      if (isMobileBrowser()) {
+        // signInWithRedirect uses top-level navigation, avoiding the iOS Safari
+        // sessionStorage-partitioning issue that breaks signInWithPopup's
+        // implicit redirect fallback ("missing initial state" error).
+        await signInWithRedirect(auth, provider);
+        return;
+      }
       await signInWithPopup(auth, provider);
     } catch (error: any) {
       console.error('Sign-in error:', error);
+      // If the popup was blocked or unsupported, fall back to redirect once.
+      if (
+        error?.code === 'auth/popup-blocked' ||
+        error?.code === 'auth/popup-closed-by-user' ||
+        error?.code === 'auth/operation-not-supported-in-this-environment' ||
+        error?.code === 'auth/web-storage-unsupported'
+      ) {
+        try {
+          await signInWithRedirect(auth, provider);
+          return;
+        } catch (redirectError: any) {
+          console.error('Redirect sign-in error:', redirectError);
+          alert('Sign-In failed: ' + (redirectError?.message ?? 'unknown error'));
+          return;
+        }
+      }
       if (error.code === 'auth/unauthorized-domain') {
-        alert('Google Sign-In failed because localhost is not authorized in Firebase.\\n\\nTo fix this: Go to Firebase Console -> Authentication -> Settings -> Authorized Domains, and add "localhost".');
+        alert('Google Sign-In failed because this domain is not authorized in Firebase.\n\nTo fix this: Go to Firebase Console -> Authentication -> Settings -> Authorized Domains, and add this domain (or "localhost" for local dev).');
       } else if (error.code === 'auth/admin-restricted-operation') {
         alert('Sign-In failed. Please enable Google Auth in your Firebase Console.');
       } else {
