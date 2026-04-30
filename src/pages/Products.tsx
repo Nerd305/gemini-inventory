@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Plus, Loader2, Camera, Sparkles, Printer, Pencil, Trash2, Package, Filter, ArrowUpDown, MapPin } from 'lucide-react';
 import { analyzeProductImage } from '../lib/ai';
 import { LabelPrinter } from '../components/LabelPrinter';
+import { HelpTooltip } from '../components/HelpTooltip';
 
 interface Product {
   id: string;
@@ -39,30 +40,39 @@ export default function Products() {
   const [sortBy, setSortBy] = useState<string>('name-asc');
 
   useEffect(() => {
-    const q = query(collection(db, 'products'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const prods: Product[] = [];
-      snapshot.forEach((doc) => {
-        prods.push({ id: doc.id, ...doc.data() } as Product);
-      });
-      setProducts(prods);
-      setLoading(false);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'products');
-    });
+    let unsubscribe: any;
+    let unsubLocs: any;
+    let isActive = true;
 
-    const locQ = query(collection(db, 'locations'));
-    const unsubLocs = onSnapshot(locQ, (snapshot) => {
-      const lMap: Record<string, string> = {};
-      snapshot.forEach(doc => {
-        lMap[doc.id] = doc.data().name;
+    const timeout = setTimeout(() => {
+      if (!isActive) return;
+      const q = query(collection(db, 'products'));
+      unsubscribe = onSnapshot(q, (snapshot) => {
+        const prods: Product[] = [];
+        snapshot.forEach((doc) => {
+          prods.push({ id: doc.id, ...doc.data() } as Product);
+        });
+        setProducts(prods);
+        setLoading(false);
+      }, (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'products');
       });
-      setLocationsMap(lMap);
-    });
+
+      const locQ = query(collection(db, 'locations'));
+      unsubLocs = onSnapshot(locQ, (snapshot) => {
+        const lMap: Record<string, string> = {};
+        snapshot.forEach(doc => {
+          lMap[doc.id] = doc.data().name;
+        });
+        setLocationsMap(lMap);
+      });
+    }, 150);
 
     return () => {
-      unsubscribe();
-      unsubLocs();
+      isActive = false;
+      clearTimeout(timeout);
+      if (unsubscribe) unsubscribe();
+      if (unsubLocs) unsubLocs();
     };
   }, []);
 
@@ -237,7 +247,7 @@ export default function Products() {
                 <Input id="category" required value={newProduct.category} onChange={e => setNewProduct({...newProduct, category: e.target.value})} />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="reorderPoint">Reorder Point</Label>
+                <Label htmlFor="reorderPoint">Reorder Point <HelpTooltip content="The minimum stock level. If inventory falls below this number, the product will appear in Low Stock Alerts on the dashboard." /></Label>
                 <Input id="reorderPoint" type="number" required min="0" value={newProduct.reorderPoint} onChange={e => setNewProduct({...newProduct, reorderPoint: parseInt(e.target.value) || 0})} />
               </div>
               <div className="space-y-2">
@@ -349,7 +359,7 @@ export default function Products() {
                 <Input id="edit-category" required value={editingProduct.category} onChange={e => setEditingProduct({...editingProduct, category: e.target.value})} />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="edit-reorderPoint">Reorder Point</Label>
+                <Label htmlFor="edit-reorderPoint">Reorder Point <HelpTooltip content="The minimum stock level. If inventory falls below this number, the product will appear in Low Stock Alerts on the dashboard." /></Label>
                 <Input id="edit-reorderPoint" type="number" required min="0" value={editingProduct.reorderPoint} onChange={e => setEditingProduct({...editingProduct, reorderPoint: parseInt(e.target.value) || 0})} />
               </div>
               <div className="space-y-2">

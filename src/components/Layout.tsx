@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { Button } from './ui/button';
 import { LayoutDashboard, ScanLine, Package, MapPin, BarChart3, LogOut, Printer, Wifi, Settings as SettingsIcon } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { APP_VERSION } from '../lib/version';
 import { collection, getDocs, query, limit } from 'firebase/firestore';
 import { db } from '../firebase';
 
@@ -27,23 +28,23 @@ export default function Layout() {
   };
 
   const navItems = [
-    { name: 'Dashboard', path: '/', icon: LayoutDashboard },
-    { name: 'Scan', path: '/scan', icon: ScanLine },
-    { name: 'Products', path: '/products', icon: Package },
-    { name: 'Locations', path: '/locations', icon: MapPin },
-    { name: 'Reports', path: '/reports', icon: BarChart3 },
-    { name: 'Print Station', path: '/print-station', icon: Printer },
-    { name: 'Settings', path: '/settings', icon: SettingsIcon },
+    { name: 'Dashboard', shortName: 'Home', path: '/', icon: LayoutDashboard },
+    { name: 'Scan', shortName: 'Scan', path: '/scan', icon: ScanLine },
+    { name: 'Products', shortName: 'Items', path: '/products', icon: Package },
+    { name: 'Locations', shortName: 'Places', path: '/locations', icon: MapPin },
+    { name: 'Reports', shortName: 'Stats', path: '/reports', icon: BarChart3 },
+    { name: 'Print Station', shortName: 'Print', path: '/print-station', icon: Printer },
+    { name: 'Settings', shortName: 'More', path: '/settings', icon: SettingsIcon },
   ];
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      <header className="bg-white border-b sticky top-0 z-10">
+      <header className="bg-white border-b sticky top-0 z-10 pt-safe">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
             <div className="flex items-center">
               <span className="text-xl font-bold text-blue-600">MedInventory</span>
-              <span className="ml-2 text-[10px] font-mono bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">v1.0.2</span>
+              <span className="ml-2 text-[10px] font-mono bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">v{APP_VERSION}</span>
             </div>
             <div className="flex items-center space-x-2 sm:space-x-4">
               <Button variant="outline" size="sm" onClick={handlePing} disabled={isPinging} className="hidden sm:flex h-8">
@@ -59,12 +60,12 @@ export default function Layout() {
         </div>
       </header>
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-24 sm:pb-8">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:pb-8">
         <Outlet />
       </main>
 
       {/* Mobile Navigation */}
-      <nav className="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t flex justify-around p-2 z-10">
+      <nav className="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t flex justify-around px-1 pt-2 pb-safe z-10">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = location.pathname === item.path;
@@ -73,12 +74,12 @@ export default function Layout() {
               key={item.path}
               to={item.path}
               className={cn(
-                "flex flex-col items-center p-2 rounded-lg text-xs font-medium",
+                "flex flex-1 flex-col items-center justify-center px-1 py-1.5 rounded-lg text-[10px] font-medium min-w-0",
                 isActive ? "text-blue-600" : "text-gray-500 hover:text-gray-900"
               )}
             >
-              <Icon className="h-6 w-6 mb-1" />
-              {item.name}
+              <Icon className="h-5 w-5 mb-0.5 shrink-0" />
+              <span className="truncate w-full text-center leading-tight">{item.shortName}</span>
             </Link>
           );
         })}
@@ -106,7 +107,7 @@ export default function Layout() {
           })}
         </div>
         <div className="px-6 py-4 border-t">
-          <p className="text-xs text-gray-400 font-mono">v1.0.2</p>
+          <p className="text-xs text-gray-400 font-mono">v{APP_VERSION}</p>
         </div>
       </div>
       

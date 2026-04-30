@@ -1,1 +1,25 @@
 @import "tailwindcss";
+
+/* iPhone safe-area handling (Dynamic Island top + home indicator bottom).
+   Tailwind v4 supports arbitrary env() values, but we define explicit
+   utilities so consumers can compose them without escape rules. */
+@layer utilities {
+  .pt-safe { padding-top: env(safe-area-inset-top); }
+  .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+  .pl-safe { padding-left: env(safe-area-inset-left); }
+  .pr-safe { padding-right: env(safe-area-inset-right); }
+  .min-h-screen-safe {
+    min-height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    min-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
+}
+
+html, body {
+  -webkit-text-size-adjust: 100%;
+  overscroll-behavior-y: none;
+}
+
+/* Prevent accidental horizontal overflow on narrow viewports (iPhone 402px). */
+body {
+  overflow-x: hidden;
+}

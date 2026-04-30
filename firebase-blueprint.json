@@ -24,6 +24,18 @@
       },
       "required": ["name", "type", "qrCode", "createdAt"]
     },
+    "Shelf": {
+      "title": "Shelf",
+      "description": "A shelf inside a fridge/location, holding basket slots",
+      "type": "object",
+      "properties": {
+        "index": { "type": "number", "description": "Zero-based shelf position from top" },
+        "name": { "type": "string" },
+        "basketSlotsPerShelf": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["index", "createdAt"]
+    },
     "Product": {
       "title": "Product",
       "description": "A medication or product in inventory",
@@ -43,18 +55,38 @@
     },
     "Basket": {
       "title": "Basket",
-      "description": "A physical basket containing vials of a product",
+      "description": "A physical basket containing trays of vials of a product. NOTE: Firestore rules are authoritative for the on-disk shape (`name`, `trayCount`, `vialsPerTray`, `looseVials`); the optional fields below were added in phase 1 of the new counting system.",
       "type": "object",
       "properties": {
         "productId": { "type": "string" },
         "locationId": { "type": "string" },
-        "count": { "type": "number" },
-        "isFull": { "type": "boolean" },
+        "name": { "type": "string" },
+        "trayCount": { "type": "number" },
+        "vialsPerTray": { "type": "number" },
+        "looseVials": { "type": "number" },
         "qrCode": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" }
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "shelfId": { "type": "string", "description": "Optional. ID of the shelf this basket sits on." },
+        "shelfPosition": { "type": "number", "description": "Optional. Zero-based slot index on the shelf." },
+        "lastCountedAt": { "type": "string", "format": "date-time", "description": "Optional. Timestamp of last count." },
+        "lastCountedBy": { "type": "string", "description": "Optional. UID of user who last counted." }
       },
-      "required": ["productId", "locationId", "count", "isFull", "qrCode", "createdAt"]
+      "required": ["productId", "locationId", "name", "trayCount", "vialsPerTray", "looseVials", "qrCode", "createdAt"]
+    },
+    "Tray": {
+      "title": "Tray",
+      "description": "An individual tray inside a basket; tracked separately for fine-grained counting",
+      "type": "object",
+      "properties": {
+        "index": { "type": "number" },
+        "vialCount": { "type": "number" },
+        "isFull": { "type": "boolean" },
+        "lastCountedAt": { "type": "string", "format": "date-time" },
+        "lastCountedBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["index", "vialCount", "createdAt"]
     },
     "InventoryLog": {
       "title": "InventoryLog",
@@ -73,6 +105,58 @@
         "timestamp": { "type": "string", "format": "date-time" }
       },
       "required": ["productId", "userId", "action", "amount", "timestamp"]
+    },
+    "AppSettings": {
+      "title": "AppSettings",
+      "description": "Singleton config doc at config/appSettings. Holds the configured fridges and their shelf/slot layouts.",
+      "type": "object",
+      "properties": {
+        "fridges": {
+          "type": "array",
+          "items": { "$ref": "#/entities/FridgeConfig" }
+        },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "updatedBy": { "type": "string" }
+      },
+      "required": ["fridges"]
+    },
+    "FridgeConfig": {
+      "title": "FridgeConfig",
+      "description": "An admin-managed entry inside AppSettings.fridges that defines a fridge's layout",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Stable ID, e.g. 'fridge-1'" },
+        "name": { "type": "string", "description": "Display name, e.g. 'Main Refrigerator'" },
+        "shelfCount": { "type": "number" },
+        "basketSlotsPerShelf": { "type": "number" }
+      },
+      "required": ["id", "name", "shelfCount", "basketSlotsPerShelf"]
+    },
+    "CountingSession": {
+      "title": "CountingSession",
+      "description": "An in-progress or completed inventory count session",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "fridgeId": { "type": "string" },
+        "status": { "type": "string", "enum": ["in_progress", "completed", "abandoned"] },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "completedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "status", "startedAt"]
+    },
+    "LearningDataEntry": {
+      "title": "LearningDataEntry",
+      "description": "A captured sample (image + label) used to train the vial-detection model",
+      "type": "object",
+      "properties": {
+        "imageUrl": { "type": "string" },
+        "predictedCount": { "type": "number" },
+        "actualCount": { "type": "number" },
+        "userId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["createdAt"]
     }
   },
   "firestore": {
@@ -84,6 +168,10 @@
       "schema": { "$ref": "#/entities/Location" },
       "description": "Storage locations"
     },
+    "/locations/{locationId}/shelves/{shelfId}": {
+      "schema": { "$ref": "#/entities/Shelf" },
+      "description": "Shelves within a fridge/location"
+    },
     "/products/{productId}": {
       "schema": { "$ref": "#/entities/Product" },
       "description": "Products catalog"
@@ -92,9 +180,25 @@
       "schema": { "$ref": "#/entities/Basket" },
       "description": "Physical baskets"
     },
+    "/baskets/{basketId}/trays/{trayId}": {
+      "schema": { "$ref": "#/entities/Tray" },
+      "description": "Trays within a basket"
+    },
     "/inventoryLogs/{logId}": {
       "schema": { "$ref": "#/entities/InventoryLog" },
       "description": "Audit logs for inventory changes"
+    },
+    "/config/{configId}": {
+      "schema": { "$ref": "#/entities/AppSettings" },
+      "description": "App-wide configuration. The well-known doc ID is 'appSettings'."
+    },
+    "/countingSessions/{sessionId}": {
+      "schema": { "$ref": "#/entities/CountingSession" },
+      "description": "Inventory counting sessions"
+    },
+    "/learningData/{entryId}": {
+      "schema": { "$ref": "#/entities/LearningDataEntry" },
+      "description": "Training samples for the vial-detection model"
     }
   }
 }

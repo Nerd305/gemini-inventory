@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-app.js";
 import { getFirestore, collection, getDocs, doc, setDoc } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore.js";
 
@@ -55,11 +55,6 @@ const DB = {
     } catch(e) {
       console.error("Firestore Error:", e);
     }
-  },
-  async saveAll(state) {
-    // Note: In a production app, we would only save diffs.
-    // For now, we ensure the function exists to prevent crashes.
-    console.log("Syncing state to persistence layer...", state);
   }
 };
 
@@ -88,9 +83,9 @@ const PRESETS = [1, 5, 10, 25, 50, 100, 150];
 
 // ─── Styles ───
 const COLORS = {
-  bg: "#0a0f1a", surface: "#111827", surfaceAlt: "#1a2235", border: "#2a3548",
-  primary: "#22d3ee", primaryDim: "#0e7490", accent: "#f59e0b", danger: "#ef4444",
-  success: "#10b981", text: "#e2e8f0", textDim: "#94a3b8", textMuted: "#64748b",
+  bg: "#f3f4f6", surface: "#ffffff", surfaceAlt: "#f9fafb", border: "#e5e7eb",
+  primary: "#0ea5e9", primaryDim: "#bae6fd", accent: "#f59e0b", danger: "#ef4444",
+  success: "#10b981", text: "#111827", textDim: "#4b5563", textMuted: "#9ca3af",
   white: "#fff"
 };
 
@@ -184,14 +179,13 @@ function printLabel(content, sizeType, type = "qr") {
   const sizes = {
     zebra: { w: "4in", h: "3in", css: "@page { size: 4in 3in; margin: 0; }" },
     epsonQR: { w: "1.5in", h: "1.5in", css: "@page { size: 1.5in 1.5in; margin: 0; }" },
-    epsonSlim: { w: "2.5in", h: "0.7in", css: "@page { size: 2.5in 0.7in; margin: 0; }" },
-    letter: { w: "8.5in", h: "11in", css: "@page { size: letter; margin: 0; }" }
+    epsonSlim: { w: "2.5in", h: "0.7in", css: "@page { size: 2.5in 0.7in; margin: 0; }" }
   };
   const size = sizes[sizeType] || sizes.zebra;
   
   let svgCode = "";
   if (type === "qr") {
-    svgCode = generateQRSVG(content, sizeType === 'epsonQR' ? 120 : (sizeType === 'zebra' ? 240 : (sizeType === 'letter' ? 400 : 80)));
+    svgCode = generateQRSVG(content, sizeType === 'epsonQR' ? 120 : (sizeType === 'zebra' ? 240 : 80));
   } else {
     const encoded = [];
     for (let i = 0; i < content.length; i++) {
@@ -213,25 +207,10 @@ function printLabel(content, sizeType, type = "qr") {
 
 function PrintLabelMenu({ content }) {
   return (
-    <div style={{ marginTop: 8 }}>
-      <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-          <Btn small onClick={(e) => { e.stopPropagation(); printLabel(content, 'zebra', 'qr'); }} color={COLORS.surfaceAlt} style={{ border: `1px solid ${COLORS.border}`, color: COLORS.text }}>Zebra 4x3</Btn>
-          <span style={{ fontSize: 9, color: COLORS.textMuted }}>Shelf / bin</span>
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-          <Btn small onClick={(e) => { e.stopPropagation(); printLabel(content, 'epsonQR', 'qr'); }} color={COLORS.surfaceAlt} style={{ border: `1px solid ${COLORS.border}`, color: COLORS.text }}>Eps QR (1.5x1.5)</Btn>
-          <span style={{ fontSize: 9, color: COLORS.textMuted }}>Vials / small</span>
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-          <Btn small onClick={(e) => { e.stopPropagation(); printLabel(content, 'epsonSlim', 'barcode'); }} color={COLORS.surfaceAlt} style={{ border: `1px solid ${COLORS.border}`, color: COLORS.text }}>Eps Slim (2.5x0.7)</Btn>
-          <span style={{ fontSize: 9, color: COLORS.textMuted }}>Trays / slim</span>
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-          <Btn small onClick={(e) => { e.stopPropagation(); printLabel(content, 'letter', 'qr'); }} color={COLORS.surfaceAlt} style={{ border: `1px solid ${COLORS.border}`, color: COLORS.text }}>Standard Page</Btn>
-          <span style={{ fontSize: 9, color: COLORS.textMuted }}>Normal 8.5x11</span>
-        </div>
-      </div>
+    <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 8 }}>
+      <Btn small onClick={(e) => { e.stopPropagation(); printLabel(content, 'zebra', 'qr'); }} color={COLORS.surfaceAlt} style={{ border: `1px solid ${COLORS.border}`, color: COLORS.text }}>Zebra 4x3</Btn>
+      <Btn small onClick={(e) => { e.stopPropagation(); printLabel(content, 'epsonQR', 'qr'); }} color={COLORS.surfaceAlt} style={{ border: `1px solid ${COLORS.border}`, color: COLORS.text }}>Eps QR (1.5x1.5)</Btn>
+      <Btn small onClick={(e) => { e.stopPropagation(); printLabel(content, 'epsonSlim', 'barcode'); }} color={COLORS.surfaceAlt} style={{ border: `1px solid ${COLORS.border}`, color: COLORS.text }}>Eps Slim (2.5x0.7)</Btn>
     </div>
   );
 }
@@ -239,72 +218,32 @@ function PrintLabelMenu({ content }) {
 // ─── Camera Scanner ───
 function Scanner({ onScan, onClose, inline }) {
   const videoRef = useRef(null);
-  const codeReaderRef = useRef(null);
-  const onScanRef = useRef(onScan);
+  const canvasRef = useRef(null);
+  const streamRef = useRef(null);
   const [manualCode, setManualCode] = useState("");
-  const [scanStatus, setScanStatus] = useState("starting");
-
-  useEffect(() => {
-    onScanRef.current = onScan;
-  }, [onScan]);
 
   useEffect(() => {
     let active = true;
-    let debounce = null;
-
-    const startScanner = async () => {
+    (async () => {
       try {
-        if (window.ZXing && videoRef.current) {
-          const codeReader = new window.ZXing.BrowserMultiFormatReader();
-          codeReaderRef.current = codeReader;
-          
-          await codeReader.decodeFromVideoDevice(null, videoRef.current, (result, err) => {
-            if (!active) return;
-            if (result) {
-              if (!debounce) {
-                setScanStatus("scanned");
-                onScanRef.current(result.getText());
-                debounce = setTimeout(() => { debounce = null; setScanStatus("scanning"); }, 1500);
-              }
-            }
-          });
-          if (active) setScanStatus("scanning");
-        } else {
-          // Fallback: just show camera without auto-scan
-          const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-          if (active && videoRef.current) {
-            videoRef.current.srcObject = stream;
-          }
-          if (active) setScanStatus("manual_only");
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        if (active && videoRef.current) {
+          videoRef.current.srcObject = stream;
+          streamRef.current = stream;
         }
-      } catch (e) {
-        console.error("Scanner error:", e);
-        if (active) setScanStatus("error");
-      }
-    };
-
-    startScanner();
-
-    return () => {
-      active = false;
-      try { if (codeReaderRef.current) codeReaderRef.current.reset(); } catch(e) {}
-    };
+      } catch (e) { console.error("Camera error:", e); }
+    })();
+    return () => { active = false; streamRef.current?.getTracks().forEach(t => t.stop()); };
   }, []);
 
   const handleManual = () => { if (manualCode.trim()) { onScan(manualCode.trim()); setManualCode(""); } };
 
-  const statusColors = { starting: COLORS.textMuted, scanning: COLORS.success, scanned: COLORS.accent, manual_only: COLORS.warning || "#f59e0b", error: COLORS.danger };
-  const statusText = { starting: "⏳ Starting camera...", scanning: "🟢 LIVE — Point at barcode or QR", scanned: "✓ Code detected!", manual_only: "⚠ Auto-scan unavailable — type code below", error: "✕ Camera error" };
-
   if (inline) {
     return (
       <div style={{ position: "relative", display: "flex", flexDirection: "column", borderRadius: 12, overflow: "hidden" }}>
-         <div style={{ fontSize: 11, padding: "6px 10px", background: COLORS.bg, color: statusColors[scanStatus], fontFamily: "'JetBrains Mono', monospace", textAlign: "center", letterSpacing: 1 }}>
-            {statusText[scanStatus]}
-         </div>
          <div style={{ height: 250, position: "relative" }}>
-           <video ref={videoRef} autoPlay playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 8 }} />
-           <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: 160, height: 160, border: `2px solid ${scanStatus === "scanning" ? COLORS.success : COLORS.primary}`, borderRadius: 12, transition: "border-color 0.3s" }} />
+           <video ref={videoRef} autoPlay playsInline style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 8 }} />
+           <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: 160, height: 160, border: `2px solid ${COLORS.primary}`, borderRadius: 12 }} />
          </div>
          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
           <input value={manualCode} onChange={e => setManualCode(e.target.value)} placeholder="Type code manually..."
@@ -325,6 +264,7 @@ function Scanner({ onScan, onClose, inline }) {
       <div style={{ flex: 1, position: "relative", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
         <video ref={videoRef} autoPlay playsInline style={{ width: "100%", height: "100%", objectFit: "cover" }} />
         <div style={{ position: "absolute", width: 240, height: 240, border: `3px solid ${COLORS.primary}`, borderRadius: 16 }} />
+        <canvas ref={canvasRef} style={{ display: "none" }} />
       </div>
       <div style={{ padding: 16, borderTop: `1px solid ${COLORS.border}` }}>
         <div style={{ color: COLORS.textDim, fontSize: 11, marginBottom: 8, textAlign: "center", fontFamily: "'JetBrains Mono', monospace" }}>Point camera at QR/barcode or enter code manually</div>
@@ -370,9 +310,9 @@ async function aiCategorize(imageBase64) {
 const CATEGORIES = ["All", "Peptides", "GLP-1 Agonists", "Hormones", "Vitamins", "Antibiotics", "Compounded Sterile", "Compounded Non-Sterile", "OTC", "Other"];
 
 // ─── Add Tray Form ───
-function AddTrayForm({ products, locations, onAdd, initialProdId, initialLocId }) {
-  const [prodId, setProdId] = useState(initialProdId || "");
-  const [locId, setLocId] = useState(initialLocId || "");
+function AddTrayForm({ products, locations, onAdd }) {
+  const [prodId, setProdId] = useState("");
+  const [locId, setLocId] = useState("");
   const [lotNum, setLotNum] = useState("");
   const [expDate, setExpDate] = useState("");
   const [trayCount, setTrayCount] = useState("1");
@@ -400,7 +340,7 @@ function AddTrayForm({ products, locations, onAdd, initialProdId, initialLocId }
 
 
 // ─── Inventory Workspace ───
-function InventoryWorkspace({ products, locations, trays, adjustStock, addProduct, onClose, setModal }) {
+function InventoryWorkspace({ products, locations, adjustStock, onClose, setModal }) {
   const [locId, setLocId] = useState(null);
   const [prodId, setProdId] = useState(null);
   const [mode, setMode] = useState(null);
@@ -441,17 +381,7 @@ function InventoryWorkspace({ products, locations, trays, adjustStock, addProduc
                    <div style={{marginTop: 16}}>
                      <Scanner inline onScan={(code) => {
                         const found = locations.find(l => l.code === code);
-                        if (found) { locHandleSet(found.id); return; }
-                        
-                        const prodFound = products.find(p => p.code === code);
-                        if (prodFound) {
-                           if (confirm(`Wrong screen! You scanned Product: ${prodFound.name}\n\nDo you want to skip selecting a location and just count this product?`)) {
-                              locHandleSet(locations.length > 0 ? locations[0].id : "UNKNOWN_LOC");
-                              setTimeout(() => prodHandleSet(prodFound.id, "single"), 50);
-                           }
-                           return;
-                        }
-                        alert("Location code not recognized.");
+                        if (found) locHandleSet(found.id); else alert("Location code not recognized.");
                      }} />
                    </div>
                  )}
@@ -466,10 +396,6 @@ function InventoryWorkspace({ products, locations, trays, adjustStock, addProduc
             ) : (
                locId && <div style={{marginTop: 12}}>
                   <div style={{ fontSize: 20, marginBottom: 8, fontWeight: 700}}>📍 {loc.name}</div>
-                  <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 8 }}>{loc.type} · {loc.code}</div>
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    <Btn small onClick={() => setModal({ type: "locationDetail", location: loc })} color={COLORS.surfaceAlt} style={{border:`1px solid ${COLORS.border}`, color: COLORS.textDim}}>✎ Details</Btn>
-                  </div>
                   <PrintLabelMenu content={loc.code} />
                </div>
             )}
@@ -486,30 +412,16 @@ function InventoryWorkspace({ products, locations, trays, adjustStock, addProduc
             {activeLeg === 2 ? (
                <div style={{marginTop: 16}}>
                  <div style={{fontSize: 13, color: COLORS.textDim, marginBottom: 12}}>Scan Product Barcode/QR:</div>
-                 {!prodId && <div style={{marginBottom: 16}}>
+                 <div style={{marginBottom: 16}}>
                      <Scanner inline onScan={(code) => {
-                        const locFound = locations.find(l => l.code === code);
-                        if (locFound) {
-                           if (confirm(`Wrong screen! You scanned Location: ${locFound.name}\n\nDo you want to switch your active location to this?`)) {
-                              locHandleSet(locFound.id);
-                           }
-                           return;
-                        }
-                        
                         const found = products.find(p => p.code === code);
                         if (found) { setProdId(found.id); } 
-                        else {
-                          setModal({ type: "createProductFromScan", scannedCode: code, onCreated: (newProd) => { setProdId(newProd.id); } });
-                        }
+                        else alert("Product not found by code.");
                      }} />
-                 </div>}
+                 </div>
                  <div style={{textAlign: "center", margin: "16px 0", color: COLORS.textDim, fontSize: 12, fontFamily: "'JetBrains Mono', monospace", letterSpacing:2}}>OR SEARCH</div>
                  <Select value={prodId || ""} onChange={v => setProdId(v)} options={[{value:"", label:"— Select Product —"}, ...products.map(p => ({value: p.id, label: p.name}))]} />
-                 <div style={{textAlign: "center", margin: "12px 0"}}>
-                   <Btn full onClick={() => {
-                     setModal({ type: "addProduct", _onCreatedCallback: (newProd) => { setProdId(newProd.id); } });
-                   }} color={COLORS.accent} style={{fontSize: 13}}>＋ Create New Product</Btn>
-                 </div>
+                 
                  {prodId && (
                    <div style={{marginTop: 16, padding: 16, background: COLORS.bg, borderRadius: 12, border: `1px solid ${COLORS.accent}`}}>
                      <div style={{fontSize: 16, fontWeight: 700, marginBottom: 4}}>{prod.name} selected</div>
@@ -525,10 +437,6 @@ function InventoryWorkspace({ products, locations, trays, adjustStock, addProduc
                prodId && <div style={{marginTop: 12}}>
                   <div style={{ fontSize: 18, marginBottom: 8, fontWeight: 700}}>💊 {prod.name}</div>
                   <div style={{ fontSize: 13, color: COLORS.textMuted, marginBottom: 8}}>Mode: {mode === "basket" ? "Full Baskets/Trays" : "Individual Items"}</div>
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
-                    <Btn small onClick={() => setModal({ type: "editProduct", product: prod })} color={COLORS.surfaceAlt} style={{border:`1px solid ${COLORS.border}`, color: COLORS.textDim}}>✎ Edit Product</Btn>
-                    <Btn small onClick={() => setModal({ type: "addTray", prefillProdId: prodId, prefillLocId: locId })} color={COLORS.surfaceAlt} style={{border:`1px solid ${COLORS.primary}`, color: COLORS.primary}}>🏷️ Generate Trays</Btn>
-                  </div>
                   <PrintLabelMenu content={prod.code} />
                </div>
             )}
@@ -542,46 +450,14 @@ function InventoryWorkspace({ products, locations, trays, adjustStock, addProduc
               <div style={{ fontSize: 13, color: COLORS.textDim, marginBottom: 16 }}>
                 Session Total: <span style={{fontWeight: 800, fontSize: 18, color: COLORS.text}}>{sessionCount}</span> added
               </div>
-
-              <div style={{ padding: 12, background: COLORS.bg, borderRadius: 8, marginBottom: 16, border: `1px solid ${COLORS.border}` }}>
-                <div style={{ fontSize: 11, color: COLORS.textDim, marginBottom: 8, textAlign: 'center', letterSpacing: 1 }}>MANUAL OVERRIDE</div>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center' }}>
-                  {mode === "basket" ? (
-                    <>
-                      <Btn onClick={() => { adjustStock(prod.id, -150, `Removed basket at ${loc?.name || 'Direct Scan'}`, "REMOVAL"); setSessionCount(c => c - 150); }} color={COLORS.danger} small>-1 Basket</Btn>
-                      <Btn onClick={() => { adjustStock(prod.id, 150, `Added basket at ${loc?.name || 'Direct Scan'}`, "BASKET_FULL"); setSessionCount(c => c + 150); }} color={COLORS.success} small>+1 Basket</Btn>
-                    </>
-                  ) : (
-                    <>
-                      <Btn onClick={() => { adjustStock(prod.id, -1, `Manual minus at ${loc?.name || 'Direct Scan'}`, "REMOVAL"); setSessionCount(c => c - 1); }} color={COLORS.danger} small>-1</Btn>
-                      <Btn onClick={() => { adjustStock(prod.id, 1, `Manual plus at ${loc?.name || 'Direct Scan'}`, "INVENTORY_COUNT"); setSessionCount(c => c + 1); }} color={COLORS.success} small>+1</Btn>
-                      <Btn onClick={() => { adjustStock(prod.id, 5, `Manual plus at ${loc?.name || 'Direct Scan'}`, "INVENTORY_COUNT"); setSessionCount(c => c + 5); }} color={COLORS.success} small>+5</Btn>
-                      <Btn onClick={() => { adjustStock(prod.id, 10, `Manual plus at ${loc?.name || 'Direct Scan'}`, "INVENTORY_COUNT"); setSessionCount(c => c + 10); }} color={COLORS.success} small>+10</Btn>
-                    </>
-                  )}
-                  <Btn onClick={() => {
-                      const qty = parseInt(prompt("Enter amount to add (use negative number to subtract):", "1"));
-                      if (qty) {
-                          adjustStock(prod.id, qty, `Bulk counting at ${loc?.name || 'Direct Scan'}`, qty > 0 ? "INVENTORY_COUNT" : "REMOVAL");
-                          setSessionCount(c => c + qty);
-                      }
-                  }} color={COLORS.primary} small>Custom ±</Btn>
-                </div>
-              </div>
-
               <Scanner inline onScan={(code) => {
                  if (code.startsWith("TRY-")) {
-                    const tray = (trays||[]).find(t => t.code === code);
-                    if (tray) {
-                       setModal({ type: "manageTray", tray, onVerify: () => {
-                           setSessionCount(c => c + tray.quantity);
-                       }});
-                    } else { alert("Tray not found."); }
+                    alert("Tray scanned! Proceeding to auto-audit in full app version.");
                     return;
                  }
                  if (code === prod.code) {
                     const amt = mode === "basket" ? 150 : 1;
-                    adjustStock(prod.id, amt, `Workspace session at ${loc?.name || 'Direct Scan'}`, mode === "basket" ? "BASKET_FULL" : "INVENTORY_COUNT");
+                    adjustStock(prod.id, amt, `Workspace session at ${loc.name}`, mode === "basket" ? "BASKET_FULL" : "INVENTORY_COUNT");
                     setSessionCount(c => c + amt);
                  } else {
                     alert("Scanned code does not match active product (" + prod.name + ")!");
@@ -628,34 +504,25 @@ export default function App() {
 
   const update = useCallback((fn) => {
     setState(prev => {
-      // Corrected baskets -> trays naming
-      const next = fn({ ...prev, products: [...prev.products], trays: [...(prev.trays || [])], locations: [...prev.locations], logs: [...prev.logs], sessions: [...prev.sessions] });
+      const next = fn({ ...prev, products: [...prev.products], baskets: [...prev.baskets], locations: [...prev.locations], logs: [...prev.logs], sessions: [...prev.sessions] });
+      DB.saveAll(next);
       return next;
     });
   }, []);
 
-  // Sync state to DB whenever it changes
-  useEffect(() => {
-    if (state) {
-      DB.saveAll(state);
-    }
-  }, [state]);
-
   const addLog = useCallback((entry) => {
-    const newLog = { id: uid(), timestamp: now(), user: session?.user || "System", ...entry };
-    update(s => ({ ...s, logs: [newLog, ...s.logs].slice(0, 5000) }));
-    DB.setDocRef("logs", newLog);
+    update(s => ({ ...s, logs: [{ id: uid(), timestamp: now(), user: session?.user || "System", ...entry }, ...s.logs].slice(0, 5000) }));
   }, [session, update]);
 
-  if (!state) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: COLORS.bg, color: COLORS.primary, fontFamily: "'JetBrains Mono', monospace", fontSize: 18 }}>Loading Gemini Inventory...</div>;
+  if (!state) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: COLORS.bg, color: COLORS.primary, fontFamily: "'JetBrains Mono', monospace", fontSize: 18 }}>Loading MedInventory v1.0.5...</div>;
 
   const { products: rawProducts, baskets, locations, logs, settings, trays } = state;
 
   // ─── Derived Data ───
   const products = rawProducts.map(p => {
      let matchingTrays = (trays || []).filter(t => t.productId === p.id && t.status !== "Depleted");
-     let trayStock = matchingTrays.reduce((sum, t) => sum + (t.quantity || 0), 0);
-     return { ...p, stock: (p.stock || 0) + trayStock };
+     let stock = matchingTrays.reduce((sum, t) => sum + (t.quantity || 0), 0);
+     return { ...p, stock };
   });
 
   const totalStock = products.reduce((a, p) => a + (p.stock || 0), 0);
@@ -663,49 +530,27 @@ export default function App() {
   const totalProducts = products.length;
 
   // ─── Product CRUD ───
-  const addProduct = (prod, existingCode) => {
+  const addProduct = (prod) => {
     const id = uid();
-    const code = existingCode || `GEM-${prod.name.replace(/\s+/g, "").slice(0, 4).toUpperCase()}-${id.slice(0, 4)}`;
+    const code = `GRX-${prod.name.replace(/\s+/g, "").slice(0, 4).toUpperCase()}-${id.slice(0, 4)}`;
     const newProd = { id, code, stock: 0, reorderPoint: settings.reorderDefault, createdAt: now(), ...prod };
-    DB.setDocRef("products", newProd);
     update(s => ({ ...s, products: [...s.products, newProd] }));
     addLog({ type: "PRODUCT_ADDED", productId: id, detail: `Added ${prod.name}` });
     return newProd;
   };
 
   const adjustStock = (productId, qty, reason, type = "ADJUSTMENT") => {
-    let updatedProd = null;
     update(s => ({
       ...s,
-      products: s.products.map(p => {
-          if (p.id === productId) {
-             updatedProd = { ...p, stock: Math.max(0, (p.stock||0) + qty), lastUpdated: now() };
-             return updatedProd;
-          }
-          return p;
-      })
+      products: s.products.map(p => p.id === productId ? { ...p, stock: Math.max(0, p.stock + qty), lastUpdated: now() } : p)
     }));
-    setTimeout(() => { if(updatedProd) DB.setDocRef("products", updatedProd); }, 50);
     const prod = products.find(p => p.id === productId);
     addLog({ type, productId, detail: `${qty > 0 ? "+" : ""}${qty} ${prod?.name || productId}`, reason, qty });
   };
 
   // ─── Scan Handler ───
-  const handleTrayScan = (code) => {
-      const tray = (trays||[]).find(t => t.code === code);
-      if(tray) {
-          setModal({ type: "manageTray", tray });
-      } else {
-          alert("Tray code not found in system.");
-      }
-  };
-
   const handleScan = (code) => {
     setScanning(false);
-    if (code.startsWith("TRY-")) {
-        handleTrayScan(code);
-        return;
-    }
     const prod = products.find(p => p.code === code);
     if (!prod) {
       // Check if it's a location start code
@@ -746,8 +591,8 @@ export default function App() {
       <div style={{ background: `linear-gradient(135deg, ${COLORS.surface} 0%, ${COLORS.surfaceAlt} 100%)`, borderBottom: `1px solid ${COLORS.border}`, padding: "14px 16px", position: "sticky", top: 0, zIndex: 100 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: COLORS.primary, letterSpacing: 2 }}>GEMINI</div>
-            <div style={{ fontSize: 10, color: COLORS.textMuted, letterSpacing: 3 }}>INVENTORY CONTROL</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: COLORS.primary, letterSpacing: 2 }}>MedInventory</div>
+            <div style={{ fontSize: 10, color: COLORS.textMuted, letterSpacing: 3 }}>v1.0.5</div>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {lowStockItems.length > 0 && (
@@ -821,7 +666,7 @@ export default function App() {
 
         {/* ═══ WORKSPACE TAB ═══ */}
         {tab === "workspace" && (
-          <InventoryWorkspace products={products} locations={locations} trays={trays} adjustStock={adjustStock} addProduct={addProduct} setModal={setModal} onClose={() => setTab("dash")} />
+          <InventoryWorkspace products={products} locations={locations} adjustStock={adjustStock} setModal={setModal} onClose={() => setTab("dash")} />
         )}
 
         {/* ═══ SCAN TAB ═══ */}
@@ -1011,14 +856,7 @@ export default function App() {
         <AddProductForm
           categories={CATEGORIES.filter(c => c !== "All")}
           locations={locations}
-          prefillCode={modal?.prefillCode}
-          prefill={modal?.prefill}
-          onAdd={(prod) => {
-            const newProd = addProduct(prod, modal?.prefillCode);
-            const callback = modal?._onCreatedCallback;
-            setModal({ type: "productCreatedWithCode", product: newProd });
-            if (callback) callback(newProd);
-          }}
+          onAdd={(prod) => { addProduct(prod); setModal(null); }}
         />
       </Modal>
 
@@ -1159,7 +997,7 @@ export default function App() {
 
       {/* Add Tray */}
       <Modal open={modal?.type === "addTray"} onClose={() => setModal(null)} title="Generate Inventory Trays">
-        <AddTrayForm products={products} locations={locations} initialProdId={modal?.prefillProdId} initialLocId={modal?.prefillLocId} onAdd={({ prodId, locId, lotNum, expDate, trayCount, qtyPerTray }) => {
+        <AddTrayForm products={products} locations={locations} onAdd={({ prodId, locId, lotNum, expDate, trayCount, qtyPerTray }) => {
            let newTrays = [];
            const prodName = products.find(p=>p.id===prodId)?.name || "UNK";
            for(let i=0; i<trayCount; i++) {
@@ -1191,53 +1029,6 @@ export default function App() {
          <div style={{marginTop: 16}}>
            <Btn full onClick={() => setModal(null)} color={COLORS.primary}>Done</Btn>
          </div>
-      </Modal>
-
-      {/* Manage Tray */}
-      <Modal open={modal?.type === "manageTray"} onClose={() => setModal(null)} title="Manage Tray">
-        {modal?.tray && (() => {
-           const t = modal.tray;
-           const p = products.find(prod => prod.id === t.productId);
-           return (
-             <div>
-               <div style={{fontSize: 16, fontWeight: 700, marginBottom: 4}}>{p?.name || "Unknown Product"}</div>
-               <div style={{fontSize: 12, color: COLORS.textMuted, marginBottom: 16}}>{t.code} · Location: {locations.find(l=>l.id===t.locationId)?.name}</div>
-               
-               <div style={{display: "flex", gap: 8, marginBottom: 16}}>
-                 <div style={{flex: 1, padding: 12, background: COLORS.bg, border: `1px solid ${COLORS.border}`, borderRadius: 8}}>
-                    <div style={{fontSize: 11, color: COLORS.textDim}}>Items inside</div>
-                    <div style={{fontSize: 18, fontWeight: 700, color: COLORS.success}}>{t.quantity}</div>
-                 </div>
-                 <div style={{flex: 1, padding: 12, background: COLORS.bg, border: `1px solid ${COLORS.border}`, borderRadius: 8}}>
-                    <div style={{fontSize: 11, color: COLORS.textDim}}>Status</div>
-                    <div style={{fontSize: 16, fontWeight: 700, color: t.status === "Depleted" ? COLORS.danger : COLORS.primary}}>{t.status}</div>
-                 </div>
-               </div>
-
-               <div style={{display: "flex", flexDirection: "column", gap: 8}}>
-                  {modal?.onVerify && t.status !== "Depleted" && (
-                    <Btn full color={COLORS.success} onClick={() => {
-                        modal.onVerify();
-                        setModal(null);
-                    }}>Verify & Count in Session</Btn>
-                  )}
-                  {t.status !== "Depleted" && (
-                    <Btn full color={COLORS.danger} onClick={() => {
-                        const updatedTray = {...t, status: "Depleted"};
-                        update(s => ({
-                           ...s,
-                           trays: s.trays.map(x => x.id === t.id ? updatedTray : x)
-                        }));
-                        DB.setDocRef("trays", updatedTray);
-                        addLog({ type: "TRAY_DEPLETED", detail: `Tray ${t.code} depleted.` });
-                        setModal(null);
-                    }}>Empty / Deplete Tray</Btn>
-                  )}
-                  <Btn full color={COLORS.surfaceAlt} style={{border: `1px solid ${COLORS.border}`, color: COLORS.text}} onClick={() => setModal(null)}>Cancel</Btn>
-               </div>
-             </div>
-           );
-        })()}
       </Modal>
 
       {/* Location Detail */}
@@ -1301,45 +1092,9 @@ export default function App() {
       <Modal open={modal?.type === "unknownCode"} onClose={() => setModal(null)} title="Unknown Code">
         <div style={{ textAlign: "center", padding: 20 }}>
           <div style={{ fontSize: 14, color: COLORS.textDim, marginBottom: 8 }}>Code not recognized:</div>
-          <div style={{ fontSize: 16, fontWeight: 700, color: COLORS.accent, marginBottom: 12 }}>{modal?.code}</div>
-          <div dangerouslySetInnerHTML={{ __html: generateQRSVG(modal?.code || "", 180) }} style={{ background: "#fff", borderRadius: 8, padding: 8, display: "inline-flex", justifyContent: "center", marginBottom: 16 }} />
-          <div style={{ fontSize: 12, color: COLORS.textDim, marginBottom: 16 }}>This code will be assigned as the new product's label code.</div>
-          <Btn full onClick={() => setModal({ type: "addProduct", prefillCode: modal?.code })} color={COLORS.success}>＋ Create New Product with This Code</Btn>
+          <div style={{ fontSize: 16, fontWeight: 700, color: COLORS.accent, marginBottom: 16 }}>{modal?.code}</div>
+          <Btn full onClick={() => setModal({ type: "addProduct", prefillCode: modal?.code })}>Create New Product</Btn>
         </div>
-      </Modal>
-
-      {/* Create Product from Workspace Scan */}
-      <Modal open={modal?.type === "createProductFromScan"} onClose={() => setModal(null)} title="Product Not Found">
-        <div style={{ textAlign: "center", padding: 16 }}>
-          <div style={{ fontSize: 14, color: COLORS.textDim, marginBottom: 8 }}>No product matches this code:</div>
-          <div style={{ fontSize: 16, fontWeight: 700, color: COLORS.accent, marginBottom: 12 }}>{modal?.scannedCode}</div>
-          <div dangerouslySetInnerHTML={{ __html: generateQRSVG(modal?.scannedCode || "", 160) }} style={{ background: "#fff", borderRadius: 8, padding: 8, display: "inline-flex", justifyContent: "center", marginBottom: 16 }} />
-          <div style={{ fontSize: 12, color: COLORS.textDim, marginBottom: 16 }}>Create a new product and assign this code as its label.</div>
-          <Btn full onClick={() => {
-            const onCreated = modal?.onCreated;
-            const code = modal?.scannedCode;
-            setModal({ type: "addProduct", prefillCode: code, _onCreatedCallback: onCreated });
-          }} color={COLORS.success}>＋ Create New Product</Btn>
-          <div style={{ marginTop: 8 }}>
-            <Btn full onClick={() => setModal(null)} color={COLORS.surfaceAlt} style={{ border: `1px solid ${COLORS.border}`, color: COLORS.textDim }}>Cancel</Btn>
-          </div>
-        </div>
-      </Modal>
-
-      {/* Product Created with Code - shows QR for printing */}
-      <Modal open={modal?.type === "productCreatedWithCode"} onClose={() => setModal(null)} title="Product Created ✓">
-        {modal?.product && (
-          <div style={{ textAlign: "center", padding: 16 }}>
-            <div style={{ color: COLORS.success, fontSize: 16, fontWeight: 700, marginBottom: 4 }}>✓ {modal.product.name}</div>
-            <div style={{ fontSize: 12, color: COLORS.textDim, marginBottom: 16 }}>Registered with code: <strong style={{ color: COLORS.primary }}>{modal.product.code}</strong></div>
-            <div dangerouslySetInnerHTML={{ __html: generateQRSVG(modal.product.code, 240) }} style={{ background: "#fff", borderRadius: 8, padding: 12, display: "inline-flex", justifyContent: "center", marginBottom: 12 }} />
-            <div style={{ fontSize: 12, color: COLORS.textDim, marginBottom: 12 }}>Print this label and attach it to the product container.</div>
-            <PrintLabelMenu content={modal.product.code} />
-            <div style={{ marginTop: 16 }}>
-              <Btn full onClick={() => setModal(null)} color={COLORS.primary}>Done</Btn>
-            </div>
-          </div>
-        )}
       </Modal>
 
       {/* Generate Codes */}
@@ -1353,7 +1108,7 @@ export default function App() {
 
 // ─── Sub-forms ───
 
-function AddProductForm({ categories, locations, onAdd, prefill, prefillCode }) {
+function AddProductForm({ categories, locations, onAdd, prefill }) {
   const [name, setName] = useState(prefill?.name || "");
   const [category, setCategory] = useState(prefill?.category || categories[0]);
   const [strength, setStrength] = useState(prefill?.strength || "");
@@ -1362,13 +1117,6 @@ function AddProductForm({ categories, locations, onAdd, prefill, prefillCode }) 
 
   return (
     <div>
-      {prefillCode && (
-        <div style={{ background: COLORS.surfaceAlt, borderRadius: 10, padding: 12, marginBottom: 16, border: `1px solid ${COLORS.primary}44`, textAlign: "center" }}>
-          <div style={{ fontSize: 10, color: COLORS.textMuted, letterSpacing: 1, marginBottom: 4 }}>LABEL CODE ASSIGNED</div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: COLORS.primary }}>{prefillCode}</div>
-          <div dangerouslySetInnerHTML={{ __html: generateQRSVG(prefillCode, 140) }} style={{ background: "#fff", borderRadius: 6, padding: 6, display: "inline-flex", justifyContent: "center", marginTop: 8 }} />
-        </div>
-      )}
       <Input label="Product Name" value={name} onChange={setName} placeholder="e.g. Semaglutide 2.5mg" />
       <Select label="Category" value={category} onChange={setCategory}
         options={categories.map(c => ({ value: c, label: c }))} />
@@ -1379,7 +1127,7 @@ function AddProductForm({ categories, locations, onAdd, prefill, prefillCode }) 
       )}
       <Input label="Reorder Point" value={reorderPoint} onChange={setReorderPoint} type="number" />
       <Btn full color={COLORS.success} disabled={!name.trim()} onClick={() => onAdd({ name: name.trim(), category, strength, location: location || undefined, reorderPoint: parseInt(reorderPoint) || 50 })}>
-        {prefillCode ? "Create Product & Assign Code" : "Add Product"}
+        Add Product
       </Btn>
     </div>
   );

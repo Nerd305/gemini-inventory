@@ -28,18 +28,28 @@ export default function Locations() {
 
   useEffect(() => {
     const q = query(collection(db, 'locations'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const locs: Location[] = [];
-      snapshot.forEach((doc) => {
-        locs.push({ id: doc.id, ...doc.data() } as Location);
-      });
-      setLocations(locs);
-      setLoading(false);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'locations');
-    });
+    let unsubscribe: any;
+    let isActive = true;
 
-    return () => unsubscribe();
+    const timeout = setTimeout(() => {
+      if (!isActive) return;
+      unsubscribe = onSnapshot(q, (snapshot) => {
+        const locs: Location[] = [];
+        snapshot.forEach((doc) => {
+          locs.push({ id: doc.id, ...doc.data() } as Location);
+        });
+        setLocations(locs);
+        setLoading(false);
+      }, (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'locations');
+      });
+    }, 150);
+
+    return () => {
+      isActive = false;
+      clearTimeout(timeout);
+      if (unsubscribe) unsubscribe();
+    };
   }, []);
 
   const handleAddLocation = async (e: React.FormEvent) => {

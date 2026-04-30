@@ -10,15 +10,15 @@ service cloud.firestore {
     }
     
     function isAdmin() {
-      return isAuthenticated() && 
+      return isAuthenticated() &&
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-         (request.auth.token.email == "duval.villegas@gmail.com" && request.auth.token.email_verified == true));
+         (request.auth.token.email in ["duval.villegas@mdexam.com", "duval.villegas@gmail.com"] && request.auth.token.email_verified == true));
     }
 
     function isStaffOrAdmin() {
-      return isAuthenticated() && 
+      return isAuthenticated() &&
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'staff'] ||
-         (request.auth.token.email == "duval.villegas@gmail.com" && request.auth.token.email_verified == true));
+         (request.auth.token.email in ["duval.villegas@mdexam.com", "duval.villegas@gmail.com"] && request.auth.token.email_verified == true));
     }
 
     function hasRequiredFields(fields) {
@@ -63,7 +63,11 @@ service cloud.firestore {
              request.resource.data.vialsPerTray is number && request.resource.data.vialsPerTray > 0 &&
              request.resource.data.looseVials is number && request.resource.data.looseVials >= 0 &&
              request.resource.data.qrCode is string && request.resource.data.qrCode.size() < 100 &&
-             request.resource.data.createdAt is string;
+             request.resource.data.createdAt is string &&
+             (!request.resource.data.keys().hasAny(['shelfId']) || request.resource.data.shelfId is string) &&
+             (!request.resource.data.keys().hasAny(['shelfPosition']) || request.resource.data.shelfPosition is number) &&
+             (!request.resource.data.keys().hasAny(['lastCountedAt']) || request.resource.data.lastCountedAt is string) &&
+             (!request.resource.data.keys().hasAny(['lastCountedBy']) || request.resource.data.lastCountedBy is string);
     }
 
     function isValidInventoryLog() {
@@ -127,6 +131,40 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && isValidPrintJob();
       allow update: if isAuthenticated() && isValidPrintJob();
+      allow delete: if isAdmin();
+    }
+
+    // App-wide configuration (e.g. fridges/shelves layout). Only admins write.
+    match /config/{configId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // Shelves live as a subcollection beneath each fridge/location.
+    match /locations/{locationId}/shelves/{shelfId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isStaffOrAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Trays live as a subcollection beneath each basket.
+    match /baskets/{basketId}/trays/{trayId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isStaffOrAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Counting sessions track an in-progress inventory count.
+    match /countingSessions/{sessionId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isStaffOrAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Learning data captures samples that train the vial-detection model.
+    match /learningData/{entryId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isStaffOrAdmin();
       allow delete: if isAdmin();
     }
   }

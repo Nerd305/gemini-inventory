@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Loader2, MapPin, Package, Search, Printer, ArrowRight, PlusCircle, CheckCircle2, Camera, StopCircle, Upload } from 'lucide-react';
 import { LabelPrinter } from '../components/LabelPrinter';
 import { countVialsInTray } from '../lib/ai';
+import { pushInventoryUpdate } from '../lib/apibridge';
 
 // Audio helper for scanner feedback
 const playBeep = (freq = 523.25, duration = 100, vol = 0.1) => {
@@ -54,7 +55,7 @@ export default function Scanner() {
 
   // Selections
   const [selectedLocationId, setSelectedLocationId] = useState<string>('');
-  const [taskType, setTaskType] = useState<'GENERAL' | 'SPECIFIC' | 'GUIDED'>('GENERAL');
+  const [taskType, setTaskType] = useState<'GENERAL' | 'SPECIFIC' | 'GUIDED' | 'REASSIGN'>('GENERAL');
   const [selectedProductId, setSelectedProductId] = useState<string>('');
 
   // Guided Flow States
@@ -68,6 +69,12 @@ export default function Scanner() {
   const [basketTrayCount, setBasketTrayCount] = useState<number>(0);
   const [basketVialsPerTray, setBasketVialsPerTray] = useState<number>(25);
   const [basketLooseVials, setBasketLooseVials] = useState<number>(0);
+
+  // Reassignment States
+  const [showReassignDialog, setShowReassignDialog] = useState(false);
+  const [reassignBasket, setReassignBasket] = useState<any>(null);
+  const [reassignLocationId, setReassignLocationId] = useState<string>('');
+  const [reassignProductId, setReassignProductId] = useState<string>('');
 
   // Vial Detection States
   const [vialDetectionImage, setVialDetectionImage] = useState<string>('');
@@ -98,13 +105,27 @@ export default function Scanner() {
 
   // Fetch Locations & Products
   useEffect(() => {
-    const unsubLocs = onSnapshot(query(collection(db, 'locations')), (snap) => {
-      setLocations(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
-    const unsubProds = onSnapshot(query(collection(db, 'products')), (snap) => {
-      setProducts(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
-    return () => { unsubLocs(); unsubProds(); };
+    let unsubLocs: any;
+    let unsubProds: any;
+    let isActive = true;
+
+    // Debounce listener attachment to prevent Firestore caching assertion failures in React Strict Mode
+    const timeout = setTimeout(() => {
+      if (!isActive) return;
+      unsubLocs = onSnapshot(query(collection(db, 'locations')), (snap) => {
+        setLocations(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      });
+      unsubProds = onSnapshot(query(collection(db, 'products')), (snap) => {
+        setProducts(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      });
+    }, 150);
+
+    return () => {
+      isActive = false;
+      clearTimeout(timeout);
+      if (unsubLocs) unsubLocs();
+      if (unsubProds) unsubProds();
+    };
   }, []);
 
   // Manage Scanner Lifecycle
@@ -142,7 +163,8 @@ export default function Scanner() {
     };
   }, [step]);
 
-  const handleCreateLocation = async () => {
+  const handleCreateLocation = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!newLocName) return;
     setLoading(true);
     try {
@@ -154,16 +176,20 @@ export default function Scanner() {
         createdAt: new Date().toISOString()
       });
       setSelectedLocationId(docRef.id);
-      setNewLocName('');
       setPrintData({ code: qrCode, title: newLocName, subtitle: 'Location' });
-    } catch (error) {
+      setNewLocName('');
+      playSuccess();
+    } catch (error: any) {
+      playError();
+      alert('Failed to create location: ' + error.message);
       handleFirestoreError(error, OperationType.CREATE, 'locations');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleCreateProduct = async () => {
+  const handleCreateProduct = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!newProdName || !newProdCategory) return;
     setLoading(true);
     try {
@@ -177,10 +203,13 @@ export default function Scanner() {
         createdAt: new Date().toISOString()
       });
       setSelectedProductId(docRef.id);
+      setPrintData({ code: qrCode, title: newProdName, subtitle: newProdCategory });
       setNewProdName('');
       setNewProdCategory('');
-      setPrintData({ code: qrCode, title: newProdName, subtitle: newProdCategory });
-    } catch (error) {
+      playSuccess();
+    } catch (error: any) {
+      playError();
+      alert('Failed to create product: ' + error.message);
       handleFirestoreError(error, OperationType.CREATE, 'products');
     } finally {
       setLoading(false);
@@ -252,17 +281,27 @@ export default function Scanner() {
         const q = query(collection(db, 'baskets'), where('qrCode', '==', decodedText));
         const snap = await getDocs(q);
         if (!snap.empty) {
-          const container = snap.docs[0].data();
-          const pDoc = await getDoc(doc(db, 'products', container.productId));
-          if (pDoc.exists()) {
-            setCurrentProduct({ id: pDoc.id, name: pDoc.data().name, stock: pDoc.data().currentStock });
-            const totalVials = (container.trayCount * container.vialsPerTray) + container.looseVials;
-            setActionAmount(totalVials); // Pre-fill with basket total
+          const containerDoc = snap.docs[0];
+          const container = containerDoc.data();
+          
+          if (taskType === 'REASSIGN') {
+            setReassignBasket({ id: containerDoc.id, ...container });
+            setReassignLocationId(container.locationId || '');
+            setReassignProductId(container.productId || '');
+            setShowReassignDialog(true);
             playSuccess();
-            setShowProductDialog(true);
           } else {
-            playError();
-            alert('Associated product not found');
+            const pDoc = await getDoc(doc(db, 'products', container.productId));
+            if (pDoc.exists()) {
+              setCurrentProduct({ id: pDoc.id, name: pDoc.data().name, stock: pDoc.data().currentStock });
+              const totalVials = (container.trayCount * container.vialsPerTray) + container.looseVials;
+              setActionAmount(totalVials); // Pre-fill with basket total
+              playSuccess();
+              setShowProductDialog(true);
+            } else {
+              playError();
+              alert('Associated product not found');
+            }
           }
         } else {
           playError();
@@ -304,6 +343,7 @@ export default function Scanner() {
       if (newStock < 0) newStock = 0;
 
       await updateDoc(prodRef, { currentStock: newStock });
+      await pushInventoryUpdate(currentProduct.id, newStock);
 
       await addDoc(collection(db, 'inventoryLogs'), {
         productId: currentProduct.id,
@@ -325,6 +365,26 @@ export default function Scanner() {
     } catch (error) {
       playError();
       handleFirestoreError(error, OperationType.UPDATE, 'products');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleReassignSubmit = async () => {
+    if (!reassignBasket || !reassignLocationId || !reassignProductId) return;
+    setLoading(true);
+    try {
+      await updateDoc(doc(db, 'baskets', reassignBasket.id), {
+        locationId: reassignLocationId,
+        productId: reassignProductId,
+      });
+      playSuccess();
+      setShowReassignDialog(false);
+      setReassignBasket(null);
+      alert('Basket reassigned successfully.');
+    } catch (error) {
+      playError();
+      handleFirestoreError(error, OperationType.UPDATE, 'baskets');
     } finally {
       setLoading(false);
     }
@@ -400,6 +460,7 @@ export default function Scanner() {
       const newStock = currentStock + guidedQty;
 
       await updateDoc(prodRef, { currentStock: newStock });
+      await pushInventoryUpdate(guidedProductId, newStock);
 
       await addDoc(collection(db, 'inventoryLogs'), {
         productId: guidedProductId,
@@ -500,12 +561,12 @@ export default function Scanner() {
 
             <div className="space-y-2">
               <Label>New Location Name</Label>
-              <div className="flex gap-2">
+              <form className="flex gap-2" onSubmit={handleCreateLocation}>
                 <Input placeholder="e.g. Fridge 3" value={newLocName} onChange={e => setNewLocName(e.target.value)} />
-                <Button onClick={handleCreateLocation} disabled={!newLocName || loading}>
+                <Button type="submit" disabled={!newLocName || loading}>
                   {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlusCircle className="h-4 w-4" />}
                 </Button>
-              </div>
+              </form>
             </div>
 
             <Button className="w-full" size="lg" disabled={!selectedLocationId} onClick={() => setStep(2)}>
@@ -545,6 +606,14 @@ export default function Scanner() {
                 <div>
                   <p className="font-medium text-gray-900">Guided Inventory Count</p>
                   <p className="text-sm text-gray-500">Step-by-step: Select Container &rarr; Select Product &rarr; Enter Qty &rarr; Lock it in.</p>
+                </div>
+              </label>
+
+              <label className={`flex items-start space-x-3 p-4 border rounded-lg cursor-pointer transition-colors ${taskType === 'REASSIGN' ? 'border-blue-600 bg-blue-50' : 'hover:bg-gray-50'}`}>
+                <input type="radio" className="mt-1" checked={taskType === 'REASSIGN'} onChange={() => setTaskType('REASSIGN')} />
+                <div>
+                  <p className="font-medium text-gray-900">Reassign Basket</p>
+                  <p className="text-sm text-gray-500">Scan an existing basket to assign it to a different product or shelf.</p>
                 </div>
               </label>
             </div>
@@ -601,13 +670,15 @@ export default function Scanner() {
 
                 <div className="space-y-2">
                   <Label>New Product Name</Label>
-                  <Input placeholder="e.g. Amoxicillin 500mg" value={newProdName} onChange={e => setNewProdName(e.target.value)} />
-                  <div className="flex gap-2 mt-2">
-                    <Input placeholder="Category" value={newProdCategory} onChange={e => setNewProdCategory(e.target.value)} />
-                    <Button onClick={handleCreateProduct} disabled={!newProdName || !newProdCategory || loading}>
-                      {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlusCircle className="h-4 w-4" />}
-                    </Button>
-                  </div>
+                  <form onSubmit={handleCreateProduct}>
+                    <Input placeholder="e.g. Amoxicillin 500mg" value={newProdName} onChange={e => setNewProdName(e.target.value)} />
+                    <div className="flex gap-2 mt-2">
+                      <Input placeholder="Category" value={newProdCategory} onChange={e => setNewProdCategory(e.target.value)} />
+                      <Button type="submit" disabled={!newProdName || !newProdCategory || loading}>
+                        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlusCircle className="h-4 w-4" />}
+                      </Button>
+                    </div>
+                  </form>
                 </div>
               </div>
             )}
@@ -799,6 +870,16 @@ export default function Scanner() {
                 </Card>
               )}
 
+              {taskType === 'REASSIGN' && (
+                <Card className="bg-amber-600 text-white border-none shadow-md">
+                  <CardContent className="p-4">
+                    <p className="text-xs text-amber-200 font-bold uppercase">Reassign Mode</p>
+                    <p className="font-medium">Scan a basket QR code to reassign it.</p>
+                  </CardContent>
+                </Card>
+              )}
+
+
               <Card>
                 <CardContent className="p-0 overflow-hidden">
                   <div id="reader" className="w-full border-none bg-black"></div>
@@ -823,6 +904,52 @@ export default function Scanner() {
           )}
         </div>
       )}
+
+      {/* Reassign Dialog */}
+      <Dialog open={showReassignDialog} onOpenChange={setShowReassignDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reassign Basket</DialogTitle>
+          </DialogHeader>
+          {reassignBasket && (
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">Basket: <strong>{reassignBasket.name || reassignBasket.id}</strong></p>
+              
+              <div className="space-y-2">
+                <Label>New Location / Shelf</Label>
+                <select
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  value={reassignLocationId}
+                  onChange={(e) => setReassignLocationId(e.target.value)}
+                >
+                  <option value="">-- Choose Location --</option>
+                  {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>New Product</Label>
+                <select
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  value={reassignProductId}
+                  onChange={(e) => setReassignProductId(e.target.value)}
+                >
+                  <option value="">-- Choose Product --</option>
+                  {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowReassignDialog(false)}>Cancel</Button>
+                <Button onClick={handleReassignSubmit} disabled={loading || !reassignLocationId || !reassignProductId}>
+                  {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                  Confirm Reassignment
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Product Action Dialog */}
       <Dialog open={showProductDialog} onOpenChange={setShowProductDialog}>

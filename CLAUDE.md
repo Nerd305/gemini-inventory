@@ -24,7 +24,13 @@ npm install
 npm run dev      # vite on :3000, HMR disabled when DISABLE_HMR=true (AI Studio)
 npm run build    # vite build → dist/
 npm run lint     # tsc --noEmit (type-check only; no ESLint configured)
+node scripts/bump-version.js # Bump patch version and sync src/lib/version.ts
 ```
+
+## Versioning
+
+- The application version is defined in `package.json` and mirrored in `src/lib/version.ts`.
+- **CRITICAL**: Whenever implementing new features or fixes, run `node scripts/bump-version.js` to increment the version number. This ensures the UI displays the latest rollout status.
 
 Desktop app (from `desktop/`):
 
@@ -43,7 +49,7 @@ There is no test suite and no single-test command — `lint` is the primary auto
 - `GEMINI_API_KEY` is required by `src/lib/ai.ts`. Vite injects it via `define` in [vite.config.ts](vite.config.ts#L11) as `process.env.GEMINI_API_KEY`. In AI Studio this is auto-injected; locally, put it in `.env.local`.
 - `firebase-applet-config.json` is committed and loaded directly by [src/firebase.ts](src/firebase.ts#L4). It includes a non-default `firestoreDatabaseId` — always pass it to `getFirestore(app, firebaseConfig.firestoreDatabaseId)`.
 - `firebase-blueprint.json` documents the Firestore entity schemas (User, Location, Product, Basket, InventoryLog). Note: the committed blueprint and the Firestore rules disagree on `Basket` shape — rules are authoritative (`name`, `trayCount`, `vialsPerTray`, `looseVials`).
-- `firestore.rules` enforces role-based access. The admin bootstrap email is hardcoded (`duval.villegas@gmail.com`) in both [firestore.rules](firestore.rules#L15) and [src/contexts/AuthContext.tsx](src/contexts/AuthContext.tsx#L40). First sign-in auto-creates a user doc with role `admin` for that email, else `staff`.
+- `firestore.rules` enforces role-based access. The admin bootstrap email is hardcoded (`duval.villegas@mdexam.com`) in both [firestore.rules](firestore.rules#L15) and [src/contexts/AuthContext.tsx](src/contexts/AuthContext.tsx#L40). First sign-in auto-creates a user doc with role `admin` for that email, else `staff`.
 - `vite.config.ts` has a comment explicitly warning that file watching is controlled via `DISABLE_HMR` to prevent flickering during AI Studio agent edits — don't change that logic casually.
 
 ## Print job architecture

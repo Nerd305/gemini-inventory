@@ -6,6 +6,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { APP_VERSION } from './lib/version';
 import { Button } from './components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card';
 import { Loader2 } from 'lucide-react';
@@ -16,6 +17,7 @@ import Locations from './pages/Locations';
 import Reports from './pages/Reports';
 import PrintStation from './pages/PrintStation';
 import Settings from './pages/Settings';
+import CountSession from './pages/CountSession';
 import Layout from './components/Layout';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -49,7 +51,7 @@ function Login() {
         <CardHeader className="text-center">
           <CardTitle className="text-2xl font-bold flex items-center justify-center">
             MedInventory
-            <span className="ml-2 text-[10px] font-mono bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">v1.0.2</span>
+            <span className="ml-2 text-[10px] font-mono bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">v{APP_VERSION}</span>
           </CardTitle>
           <CardDescription>Sign in to manage medication inventory</CardDescription>
         </CardHeader>
@@ -69,6 +71,7 @@ export default function App() {
       <Router>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/count" element={<PrivateRoute><CountSession /></PrivateRoute>} />
           <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
             <Route index element={<Dashboard />} />
             <Route path="scan" element={<Scanner />} />

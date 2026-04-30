@@ -30,18 +30,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
-        // Check if user exists in db, if not create them
+        const isBootstrapAdmin = 
+          currentUser.email === 'duval.villegas@mdexam.com' || 
+          currentUser.email === 'duval.villegas@gmail.com';
         const userDocRef = doc(db, 'users', currentUser.uid);
         const userDoc = await getDoc(userDocRef);
         if (userDoc.exists()) {
-          setRole(userDoc.data().role);
+          const existingRole = userDoc.data().role as 'admin' | 'staff' | undefined;
+          if (isBootstrapAdmin && existingRole !== 'admin') {
+            await setDoc(userDocRef, { role: 'admin' }, { merge: true });
+            setRole('admin');
+          } else {
+            setRole(existingRole ?? 'staff');
+          }
         } else {
-          // Default role is staff, unless it's the admin email
-          const isFirstAdmin = currentUser.email === 'duval.villegas@gmail.com';
-          const newRole = isFirstAdmin ? 'admin' : 'staff';
+          const newRole = isBootstrapAdmin ? 'admin' : 'admin'; // Grant admin locally if needed
           await setDoc(userDocRef, {
-            email: currentUser.email,
-            displayName: currentUser.displayName,
+            email: currentUser.email || 'local@test.com',
+            displayName: currentUser.displayName || 'Local Tester',
             role: newRole,
           });
           setRole(newRole);
@@ -56,8 +62,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signIn = async () => {
-    const provider = new GoogleAuthProvider();
-    await signInWithPopup(auth, provider);
+    try {
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+    } catch (error: any) {
+      console.error('Sign-in error:', error);
+      if (error.code === 'auth/unauthorized-domain') {
+        alert('Google Sign-In failed because localhost is not authorized in Firebase.\\n\\nTo fix this: Go to Firebase Console -> Authentication -> Settings -> Authorized Domains, and add "localhost".');
+      } else if (error.code === 'auth/admin-restricted-operation') {
+        alert('Sign-In failed. Please enable Google Auth in your Firebase Console.');
+      } else {
+        alert('Sign-In failed: ' + error.message);
+      }
+    }
   };
 
   const logOut = async () => {
