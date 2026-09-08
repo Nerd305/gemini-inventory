@@ -43,7 +43,8 @@ service cloud.firestore {
              request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() < 100 &&
              request.resource.data.type in ['fridge', 'shelf', 'cabinet'] &&
              request.resource.data.qrCode is string && request.resource.data.qrCode.size() < 100 &&
-             request.resource.data.createdAt is string;
+             request.resource.data.createdAt is string &&
+             (!request.resource.data.keys().hasAny(['shelfCount']) || (request.resource.data.shelfCount is number && request.resource.data.shelfCount >= 0 && request.resource.data.shelfCount <= 50));
     }
 
     function isValidProduct() {
@@ -68,7 +69,8 @@ service cloud.firestore {
              (!request.resource.data.keys().hasAny(['shelfPosition']) || request.resource.data.shelfPosition is number) &&
              (!request.resource.data.keys().hasAny(['lastCountedAt']) || request.resource.data.lastCountedAt is string) &&
              (!request.resource.data.keys().hasAny(['lastCountedBy']) || request.resource.data.lastCountedBy is string) &&
-             (!request.resource.data.keys().hasAny(['updatedAt']) || request.resource.data.updatedAt is string);
+             (!request.resource.data.keys().hasAny(['updatedAt']) || request.resource.data.updatedAt is string) &&
+             (!request.resource.data.keys().hasAny(['lotNumber']) || request.resource.data.lotNumber is string);
     }
 
     function isValidInventoryLog() {
@@ -84,7 +86,7 @@ service cloud.firestore {
       return hasRequiredFields(['code', 'title', 'format', 'status', 'createdAt']) &&
              request.resource.data.code is string &&
              request.resource.data.title is string &&
-             request.resource.data.format in ['4x3', '1.5x1.5', '2.5x0.7', '2.5x1.5', 'canon-integrated'] &&
+             request.resource.data.format in ['4x3', '2x1.5', '1.5x1.5', '2.5x0.7', '2.5x1.5', 'canon-integrated'] &&
              request.resource.data.status in ['pending', 'completed'] &&
              request.resource.data.createdAt is string;
     }

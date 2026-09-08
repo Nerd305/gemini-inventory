@@ -1,5 +1,6 @@
 export type LabelFormat =
   | '4x3'
+  | '2x1.5'
   | '1.5x1.5'
   | '2.5x0.7'
   | '2.5x1.5'

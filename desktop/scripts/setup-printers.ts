@@ -57,7 +57,7 @@ function main() {
   console.log('');
   
   console.log('Step 2: Mapping label formats to printers...\n');
-  console.log('Available formats: 4x3, 1.5x1.5, 2.5x1.5, 2.5x0.7, canon-integrated');
+  console.log('Available formats: 4x3, 2x1.5, 1.5x1.5, 2.5x1.5, 2.5x0.7, canon-integrated');
   console.log('');
   
   const config: { formats: Record<string, {
@@ -70,6 +70,7 @@ function main() {
   
   const defaultMappings: Record<string, string[]> = {
     '4x3': ['Zebra', 'ZD410', 'ZD420'],
+    '2x1.5': ['EPSON', 'TM', 'C6000'],
     '1.5x1.5': ['EPSON', 'TM', 'C6000'],
     '2.5x1.5': ['EPSON', 'TM', 'C6000'],
     '2.5x0.7': ['EPSON', 'TM', 'C6000'],
@@ -124,6 +125,7 @@ function main() {
 function getDefaultPageSize(format: string): { widthIn: number; heightIn: number } {
   const sizes: Record<string, { widthIn: number; heightIn: number }> = {
     '4x3': { widthIn: 4, heightIn: 3 },
+    '2x1.5': { widthIn: 2, heightIn: 1.5 },
     '1.5x1.5': { widthIn: 1.5, heightIn: 1.5 },
     '2.5x1.5': { widthIn: 2.5, heightIn: 1.5 },
     '2.5x0.7': { widthIn: 2.5, heightIn: 0.7 },
@@ -135,6 +137,7 @@ function getDefaultPageSize(format: string): { widthIn: number; heightIn: number
 function getDefaultLpOptions(format: string, printer: string): string[] {
   const lpOptions: Record<string, string[]> = {
     '4x3': ['-o', 'media=Custom.4x3in', '-o', 'fit-to-page'],
+    '2x1.5': ['-o', 'media=Custom.2x1.5in'],
     '1.5x1.5': ['-o', 'media=Custom.1.5x1.5in'],
     '2.5x1.5': ['-o', 'media=Custom.2.5x1.5in'],
     '2.5x0.7': ['-o', 'media=Custom.2.5x0.7in'],

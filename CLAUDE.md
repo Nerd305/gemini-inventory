@@ -45,6 +45,8 @@ npm run lint     # tsc --noEmit for both main & renderer tsconfigs
 
 There is no test suite and no single-test command — `lint` is the primary automated check for both apps.
 
+`@types/react` / `@types/react-dom` are devDependencies on purpose: without them React imports silently type as `any` and `key` on function components fails to type-check.
+
 ## Environment & config
 
 - `GEMINI_API_KEY` is required by `src/lib/ai.ts`. Vite injects it via `define` in [vite.config.ts](vite.config.ts#L11) as `process.env.GEMINI_API_KEY`. In AI Studio this is auto-injected; locally, put it in `.env.local`.
@@ -78,10 +80,24 @@ The `ApiBridgeConfig` shape (`endpointUrl`, `apiKey`, `enabled`, `syncDirection`
 
 There are two scan flows in the codebase, but only one is canonical:
 
-- **Canonical: `/count`** — driven by [src/contexts/CountingSessionContext.tsx](src/contexts/CountingSessionContext.tsx). Creates a `countingSessions` doc on mount, parses QR codes (`SHELF:`, `BSKT:`, `TRAY:`), enforces a soft lock so two users can't count the same basket, and the [TrayCount](src/components/counting/TrayCount.tsx) component writes `baskets/{id}/trays/slot-N` and increments `progress.totalVials` + `arrayUnion(countedBaskets)` on the session doc. Live progress pills on `/count` subscribe to that doc via `onSnapshot`.
-- **Deprecated: `/scan`** — [src/pages/Scanner.tsx](src/pages/Scanner.tsx) (self-labeled "Inventory Scanner (Deprecated)" at line 546). Still hosts Basket Setup and Reassign flows; the General/Guided flows render a deprecation banner pointing users to `/count`.
+- **Canonical: `/count`** — driven by [src/contexts/CountingSessionContext.tsx](src/contexts/CountingSessionContext.tsx). The hierarchy is **fridge → shelf → basket**, and every level can be reached by scanning a label *or* by tapping, so counting works before any labels exist. [BottomPanel](src/components/counting/BottomPanel.tsx) routes `FridgePicker` → `ShelfPicker` → `ShelfBaskets` → `QuickCount`; [CountSession.tsx](src/pages/CountSession.tsx) owns the camera (html5-qrcode, prefers the iPhone's plain "Back Camera" over ultra-wide/telephoto), the camera on/off toggle, manual code entry and the scan feedback banner.
+  - A basket is counted as **N full trays + loose vials** (`baskets/{id}.trayCount / vialsPerTray / looseVials`), matching the "4 trays + 22 vials" notation used on the floor. There are no per-tray documents any more (the old `baskets/{id}/trays/slot-N` docs are inert).
+  - [`commitBasketCount()`](src/lib/inventory.ts) is the single write path: one transaction updates the basket (counts, `lastCountedAt/By`, optional re-assignment of `locationId/shelfId/shelfPosition`, optional `name/lotNumber` edits), appends an `inventoryLogs` `COUNT` entry with `previousCount/newCount`, and bumps the session doc (`progress.totalVials` = gross vials counted this session, `progress.netDelta`, `progress.basketsCounted`, `countedBaskets` via `arrayUnion`). The product's `currentStock` is adjusted afterwards as a best-effort follow-up (clamped ≥ 0) so a legacy product doc can never block a count.
+  - [`createBasket()`](src/lib/inventory.ts) registers a basket in place (product picker with quick-create, lot, slot, initial count) with `qrCode = BSKT:<docId>` so its label can be printed immediately through `LabelPrinter`.
+  - AI is used only for the loose (partial) tray: `AiCountButton` downsizes the photo to 1024 px, calls `countVialsInTray`, and `QuickCount` writes a `learningData` sample (`trayId: 'loose'`) on save.
+  - Soft lock: opening a basket that another live session has as `activeBasketId` shows a confirm instead of blocking.
+- **Deprecated: `/scan`** — [src/pages/Scanner.tsx](src/pages/Scanner.tsx) is unchanged. Its Basket Setup still generates `CONT:<timestamp>` codes, which `/count` resolves through the `qrCode` field.
 
-Both flows write `learningData` samples (image + AI prediction + user-confirmed count + delta) for future model fine-tuning. `/count` threads the real `productId`; `/scan`'s guided/dialog paths use placeholder IDs (`scanner_guided`, `scanner_unknown`) and so should not be relied on for per-product accuracy.
+### Scan code formats ([src/lib/scanCodes.ts](src/lib/scanCodes.ts))
+
+| Payload | Meaning | Resolution |
+| --- | --- | --- |
+| `LOC:<x>` / `FRIDGE:<x>` | fridge (a `locations` doc) | doc id first, then `locations.qrCode == payload` (legacy `LOC:<timestamp>` labels keep working) |
+| `SHELF:<locationId>/<n>` | shelf `n` (1-based, top to bottom) of that fridge | parsed locally; `baskets.shelfId` stores the same `<locationId>/<n>` string |
+| `BSKT:<basketId>` / `CONT:<x>` | basket (one bin, or one lot inside a shared bin) | doc id first, then `baskets.qrCode == payload` |
+| `TRAY:` / `PRODUCT:` | informational only | no state change |
+
+The number of shelves per fridge is `locations.shelfCount` (default 5, editable on the Locations page, which also renders a shelf-by-shelf map with print buttons). `config/appSettings.fridges` (Settings → Fridge Configuration) is legacy and is not read by the count flow.
 
 ## Print job architecture
 
@@ -93,7 +109,8 @@ The end-to-end print flow spans Firestore + both apps:
 4. On success the renderer marks the Firestore doc `status: 'completed'`; on failure the job is simply dropped from the in-memory queue (the Firestore doc stays `pending` for retry).
 
 Key invariants:
-- Printer format keys (`'4x3' | '1.5x1.5' | '2.5x0.7' | '2.5x1.5' | 'canon-integrated'`) must match between `LabelFormat` in `src/shared/types.ts`, the `format` enum in `firestore.rules` (`isValidPrintJob`), and the `formats` map in `desktop/config/printers.json` / `DEFAULT_CONFIG` in [configLoader.ts](desktop/main/configLoader.ts#L17). Adding a format means updating all four.
+- Printer format keys (`'4x3' | '2x1.5' | '1.5x1.5' | '2.5x0.7' | '2.5x1.5' | 'canon-integrated'`) must match between `LabelFormat` in `src/shared/types.ts`, `LABEL_FORMAT_SPECS` in [src/shared/labelFormats.ts](src/shared/labelFormats.ts) (page sizes + option labels), the `format` enum in `firestore.rules` (`isValidPrintJob`), and the `formats` map in `desktop/config/printers.json` / `DEFAULT_CONFIG` in [configLoader.ts](desktop/main/configLoader.ts#L17). Adding a format means updating all five, plus a layout branch in `LabelContent.tsx`.
+- `DEFAULT_LABEL_FORMAT` is `2x1.5` (Epson 2" × 1.5" stock): it is what the counting flow, the Locations fridge map and `LabelPrinter` pre-select for basket / shelf / fridge labels. `LabelContent` renders it as QR-left / text-right. Queue jobs through `enqueuePrintJob()` in [src/lib/printing.ts](src/lib/printing.ts). **The rules enum must be deployed (`firebase deploy --only firestore:rules`) before Firestore accepts `2x1.5` jobs**, and an already-installed print server needs the `2x1.5` entry added to its `printers.json`.
 - `printers.json` is hot-reloaded via `fs.watch`. In dev it lives at `desktop/config/printers.json`; when packaged it moves to `~/Library/Application Support/VialTrack Print Server/printers.json`. The config loader seeds defaults if missing.
 - The `canon-integrated` format prints a full Letter page with content positioned onto an adhesive patch via `stickyRegion` (inches). `LabelContent.tsx` consumes that region to place the label body.
 - CUPS printer names must match `lpstat -p` exactly. `lpOptions` in the config are passed literally as CLI args to `lp`.
@@ -104,14 +121,14 @@ Defined in [firestore.rules](firestore.rules):
 
 - `users` — profile + role (`admin` | `staff`). Self-create allowed; role can only be changed by an admin.
 - `whitelist/{email}` — gates non-bootstrap sign-ins. Email is stored lowercased as the doc ID; admin-only writes.
-- `locations` (+ `locations/{id}/shelves/{shelfId}` subcollection) — fridges/cabinets with QR codes.
+- `locations` (+ an unused `locations/{id}/shelves/{shelfId}` subcollection) — fridges/cabinets with QR codes and an optional `shelfCount` (default 5). Shelves themselves are implicit (`SHELF:<locationId>/<n>`), not documents.
 - `products` — catalog with `currentStock`, `category`, `reorderPoint`.
-- `baskets` (+ `baskets/{id}/trays/{trayId}` subcollection) — physical containers; tray docs are written by `TrayCount.tsx` with `slot-N` IDs.
+- `baskets` — one physical bin, or one lot inside a shared bin: `productId`, `locationId`, `name`, `trayCount`, `vialsPerTray`, `looseVials`, `qrCode`, optional `shelfId` (`<locationId>/<n>`), `shelfPosition` (1 back-left, 2 back-right, 3 front-left, 4 front-right), `lotNumber`, `lastCountedAt/By`. Written only by `commitBasketCount` / `createBasket` / `moveBasket` in `src/lib/inventory.ts`. The `baskets/{id}/trays` subcollection is legacy.
 - `inventoryLogs` — immutable after create (`allow update: if false`); admin-only delete (used for factory resets).
 - `printJobs` — see Print job architecture above.
 - `config/{configId}` — singleton `appSettings` doc holding `fridges` (FridgeConfig list), `hudEnabled`, `capColorMap`, `apiBridgeConfig`. Admin-only writes.
-- `countingSessions` — in-progress counts with `status` ∈ `active | in_progress | paused | completed | abandoned`, `progress.totalVials`, `countedBaskets[]`, `activeBasketId`. Validated by `isValidCountingSession`.
-- `learningData` — per-tray AI training samples (`imageBase64`, `aiPrediction`, `userFinalCount`, `delta`, `productId`, `trayId`, `basketId`, `userId`, `timestamp`). No schema validator in rules — staff can write any shape.
+- `countingSessions` — in-progress counts with `status` ∈ `active | in_progress | paused | completed | abandoned`, `progress.totalVials` (gross vials counted), `progress.netDelta`, `progress.basketsCounted`, `countedBaskets[]`, `activeBasketId`, `locationId` (active fridge). Validated by `isValidCountingSession`.
+- `learningData` — AI training samples for the loose tray (`imageBase64` ≤ 1024 px JPEG, `aiPrediction`, `userFinalCount`, `delta`, `productId`, `trayId: 'loose'`, `basketId`, `userId`, `timestamp`). No schema validator in rules — staff can write any shape.
 
 All reads require auth; most writes require `staff` or `admin`; deletes are admin-only (except `printJobs`). Role is read from `/users/{uid}.role` or granted via either bootstrap admin email.
 

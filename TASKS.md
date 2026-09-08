@@ -11,8 +11,18 @@ Tier numbers match the audit framing: lower tier = higher severity.
 - **v1.0.7** — AI Performance Stats panel now reads live from Firestore (`learningData`). Replaced fake hardcoded stats with `getCountFromServer` + `getAggregateFromServer` aggregates and a 28-day weekly trend bucket. Empty-state copy added. See [src/lib/learning.ts](src/lib/learning.ts), [src/pages/Settings.tsx](src/pages/Settings.tsx).
 - **v1.0.8** — Live vials/baskets counter on `/count` (TopBar). Subscribes to the active `countingSessions` doc via `onSnapshot`; shows "N baskets" and "Δ ±N vials" pills, replacing the misleading "🧠 Learning" badge. See [src/contexts/CountingSessionContext.tsx](src/contexts/CountingSessionContext.tsx), [src/pages/CountSession.tsx](src/pages/CountSession.tsx).
 - **v1.0.8** — Tier 1 #1 (`lastScanRef` ReferenceError on `/count`) — fixed inline; required for the counter to be testable.
+- **v1.0.9** — Scan-and-tap counting rebuilt around the physical layout (fridge → shelf → basket, back/front × left/right slots). Baskets are counted as full trays + loose vials in one screen (`QuickCount`), every level is reachable by scan *or* tap, new baskets are registered and labelled in place, and shelf/fridge/basket labels print on the fly to the 2×1.5" Epson stock (`2x1.5` format added across web, rules and desktop). iPhone camera selection now prefers the main back camera. Locations page gained `shelfCount` and a shelf-by-shelf map with print buttons. `@types/react` installed so the whole tree type-checks. See [src/lib/inventory.ts](src/lib/inventory.ts), [src/lib/scanCodes.ts](src/lib/scanCodes.ts), [src/contexts/CountingSessionContext.tsx](src/contexts/CountingSessionContext.tsx), [src/components/counting/](src/components/counting/).
 
 ---
+
+## Loose ends after v1.0.9 (scan-and-tap counting)
+
+- [ ] **Deploy rules** — `firebase deploy --only firestore:rules` is required before Firestore accepts `2x1.5` print jobs and validates `locations.shelfCount` / `baskets.lotNumber`. Until then the app still works; only 2x1.5 print jobs are rejected (the dialog explains why).
+- [ ] **Print server config** — add the `2x1.5` entry to `~/Library/Application Support/VialTrack Print Server/printers.json` on the iMac (packaged installs never overwrite the file) and make sure the Epson has a `Custom.2x1.5in` media size.
+- [ ] **Settings → Fridge Configuration is redundant** — the count flow reads `locations.shelfCount`, not `config/appSettings.fridges`. Either delete that Settings section or migrate it to edit `locations`.
+- [ ] **Product `currentStock` drift** — counts adjust stock by delta (best effort). Add an admin "Recalculate stock from baskets" action (sum of `trayCount*vialsPerTray+looseVials` per product) to resync after legacy data.
+- [ ] **`/scan` Basket Setup** still creates `CONT:` codes without `shelfId`; the count flow resolves them, but new baskets should be created from `/count` → "New basket" instead. Consider deleting the page.
+- [ ] **Slot map UI** — `shelfPosition` (1–4) is captured; the Locations fridge map only sorts by it. A true 2×2 grid per shelf (like the reference screenshots) is a small follow-up.
 
 ## Tier 1 — Blocking (`npm run lint` is currently red on these)
 
@@ -56,6 +66,6 @@ These are the "use the data, not just collect it" follow-ups from the AI Perform
 
 ## Counter follow-ups (defer until requested)
 
-- [ ] **Gross vials counted (not just delta)** — current pill shows net Δ vs. previous count. A pharmacist mid-session may want "vials touched this session." Add a separate `progress.totalVialsCounted` field and increment by `count` not `countDiff`.
-- [ ] **Trays counted (not just baskets)** — `countedBaskets` array gives baskets touched. Trays are a finer-grain unit; track separately if useful.
-- [ ] **Mobile rendering** — counter pills are `hidden sm:flex` (desktop only). Move to a more compact display on phones.
+- [x] **Gross vials counted (not just delta)** — `progress.totalVials` is now gross vials counted and `progress.netDelta` the net change; both shown in the top bar and the session review. **Shipped in v1.0.9.**
+- [x] **Trays counted (not just baskets)** — superseded: trays are no longer counted individually (full trays + loose vials per basket). **v1.0.9.**
+- [x] **Mobile rendering** — counters now render as a compact row under the top bar on every screen size. **Shipped in v1.0.9.**

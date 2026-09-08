@@ -29,7 +29,7 @@ export default function Layout() {
 
   const navItems = [
     { name: 'Dashboard', shortName: 'Home', path: '/', icon: LayoutDashboard },
-    { name: 'Scan', shortName: 'Scan', path: '/scan', icon: ScanLine },
+    { name: 'Count', shortName: 'Count', path: '/count', icon: ScanLine },
     { name: 'Products', shortName: 'Items', path: '/products', icon: Package },
     { name: 'Locations', shortName: 'Places', path: '/locations', icon: MapPin },
     { name: 'Reports', shortName: 'Stats', path: '/reports', icon: BarChart3 },

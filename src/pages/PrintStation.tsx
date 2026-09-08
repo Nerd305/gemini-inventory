@@ -6,6 +6,7 @@ import { Button } from '../components/ui/button';
 import { Loader2, Printer, CheckCircle2, Clock, RefreshCw } from 'lucide-react';
 import { LabelContent } from '../shared/LabelContent';
 import { usePrintJobQueue } from '../shared/printJobSubscription';
+import { labelPageSize } from '../shared/labelFormats';
 import type { PrintJob } from '../shared/types';
 
 export default function PrintStation() {
@@ -54,16 +55,7 @@ export default function PrintStation() {
       return;
     }
 
-    const size =
-      activeJob.format === '4x3'
-        ? '4in 3in'
-        : activeJob.format === '1.5x1.5'
-        ? '1.5in 1.5in'
-        : activeJob.format === '2.5x1.5'
-        ? '2.5in 1.5in'
-        : activeJob.format === '2.5x0.7'
-        ? '2.5in 0.7in'
-        : '8.5in 11in';
+    const size = labelPageSize(activeJob.format);
 
     iframeDoc.open();
     iframeDoc.write(`

@@ -6,6 +6,12 @@
       "margins": { "top": 0, "right": 0, "bottom": 0, "left": 0 },
       "lpOptions": ["-o", "media=Custom.4x3in", "-o", "fit-to-page"]
     },
+    "2x1.5": {
+      "cupsPrinter": "EPSON_C6000",
+      "pageSize": { "widthIn": 2, "heightIn": 1.5 },
+      "margins": { "top": 0, "right": 0, "bottom": 0, "left": 0 },
+      "lpOptions": ["-o", "media=Custom.2x1.5in"]
+    },
     "2.5x0.7": {
       "cupsPrinter": "EPSON_C6000",
       "pageSize": { "widthIn": 2.5, "heightIn": 0.7 },

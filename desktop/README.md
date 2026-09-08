@@ -21,7 +21,7 @@ This launches three concurrent processes:
 
 Go to **System Settings → Printers & Scanners** and add your printers:
 - Zebra ZD410 (4×3 labels)
-- Epson TM-C6000 (1.5×1.5, 2.5×1.5, 2.5×0.7 labels)
+- Epson TM-C6000 (2×1.5 basket/shelf labels, plus 1.5×1.5, 2.5×1.5, 2.5×0.7)
 - Canon (integrated label sheets)
 
 ### 2. Auto-detect & configure
@@ -39,6 +39,7 @@ This runs `lpstat -p` to find available printers and suggests mappings based on 
 Print alignment sheets for each format to verify label positioning:
 
 ```bash
+npm run test-print -- --format 2x1.5
 npm run test-print -- --format 4x3
 npm run test-print -- --format 2.5x0.7
 npm run test-print -- --format canon-integrated
@@ -65,6 +66,12 @@ If missing, add in **System Settings → Printers → Options & Supplies**.
 ## Configuring printers manually
 
 Edit [`config/printers.json`](config/printers.json). The file is hot-reloaded — no restart needed. On packaged installs it lives under `~/Library/Application Support/VialTrack Print Server/printers.json`.
+
+**Adding a format to an existing install:** the packaged app never overwrites an existing `printers.json`, so when a new
+format ships (e.g. `2x1.5`, used for the basket / shelf / fridge labels printed from the counting flow) add its entry to
+`~/Library/Application Support/VialTrack Print Server/printers.json` by hand (copy it from
+[`config/printers.json`](config/printers.json)). Jobs for a format with no entry are logged as
+`No printer mapping for format` and stay `pending` in Firestore until the mapping exists.
 
 Find your exact CUPS printer names with:
 
@@ -106,7 +113,7 @@ macOS Print-dialog "Presets" are not consumable by the `lp` CLI. Set equivalent 
 
 ```bash
 lpoptions -p Zebra_ZD410 -o media=Custom.4x3in -o fit-to-page
-lpoptions -p EPSON_C6000 -o media=Custom.2.5x0.7in
+lpoptions -p EPSON_C6000 -o media=Custom.2x1.5in
 ```
 
 Per-job overrides are passed through the `lpOptions` array in `printers.json`.
