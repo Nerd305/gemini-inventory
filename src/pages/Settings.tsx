@@ -32,6 +32,7 @@ import {
 import { APP_VERSION } from '../lib/version';
 import { AiStats, loadAiStats } from '../lib/learning';
 import { HelpTooltip } from '../components/HelpTooltip';
+import { MobilePasswordCard } from '../components/MobilePasswordCard';
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -997,6 +998,8 @@ Body:
           </CardContent>
         </Card>
       )}
+
+      <MobilePasswordCard />
 
       <Card className="border-red-200 bg-red-50/30">
         <CardHeader>

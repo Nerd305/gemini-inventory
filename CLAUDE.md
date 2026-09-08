@@ -4,16 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository layout
 
-Two independent applications share one Firestore database and a `src/shared/` code folder:
+Three independent applications share one Firestore database and a `src/shared/` code folder:
 
 - **Root (`/`)** — React 19 + Vite + Tailwind 4 web app (MedInventory / VialTrack), packaged into a Node container that also runs an Express webhook backend. Built for Google AI Studio; uses Gemini via `@google/genai` and Firebase Auth + Firestore.
 - **`desktop/`** — Electron + Vite + TypeScript macOS print server (VialTrack Print Server). Runs on the pharmacy iMac, subscribes to the Firestore `printJobs` queue, and routes each job to a physical printer via CUPS (`lp`).
+- **`mobile/`** — Expo SDK 57 / React Native iPhone app (VialTrack Count) that runs in Expo Go. Scan / tap / voice counting flow, visual AI vial counter, on-the-fly label printing. See [mobile/README.md](mobile/README.md). Its `metro.config.js` watches the repo root so it imports `../src/shared/*` and `firebase-applet-config.json` directly, blocks the root `node_modules`, and disables package-exports resolution (Firebase's React Native builds are reached through the legacy `react-native` field).
 
 The desktop renderer imports shared types and the `usePrintJobQueue` hook from the root via Vite aliases:
 - `@shared` → `../src/shared`
 - `@firebase-config` → `../src/firebase`
 
-Keep anything used by both apps inside `src/shared/`; imports from `src/components`, `src/pages`, etc. will break the desktop build.
+Keep anything used by more than one app inside `src/shared/`; imports from `src/components`, `src/pages`, etc. will break the desktop and mobile builds. Shared modules must not import `src/firebase.ts` — Firestore-touching functions take the `db` handle as their first argument (`inventoryCore.ts`, `printJobs.ts`) and each app binds it (`src/lib/inventory.ts` / `src/lib/printing.ts` for web, `mobile/src/core.ts` for the phone). Shared today: `types.ts`, `labelFormats.ts`, `LabelContent.tsx` (web + desktop only, uses DOM), `printJobSubscription.ts`, `scanCodes.ts`, `inventoryCore.ts`, `printJobs.ts`, `voiceCommands.ts`.
 
 ## Common commands
 
@@ -33,6 +34,16 @@ node scripts/bump-version.js # Bump patch version and sync src/lib/version.ts
 - The application version is defined in `package.json` and mirrored in `src/lib/version.ts`.
 - **CRITICAL**: Whenever implementing new features or fixes, run `node scripts/bump-version.js` to increment the version number. This ensures the UI displays the latest rollout status.
 
+Mobile app (from `mobile/`):
+
+```bash
+npm install
+cp .env.example .env         # EXPO_PUBLIC_GEMINI_API_KEY
+npx expo start               # Expo Go on the iPhone (same Wi-Fi) or --tunnel
+npx tsc --noEmit             # type-check (strict)
+npx expo export --platform ios --output-dir /tmp/x   # Metro bundling smoke test without a device
+```
+
 Desktop app (from `desktop/`):
 
 ```bash
@@ -43,7 +54,7 @@ npm run package  # electron-builder → dist/packaged/*.dmg
 npm run lint     # tsc --noEmit for both main & renderer tsconfigs
 ```
 
-There is no test suite and no single-test command — `lint` is the primary automated check for both apps.
+There is no test suite and no single-test command — `lint` / `tsc --noEmit` is the primary automated check for all three apps. The voice parser is pure and can be exercised with `npx tsx` (see `src/shared/voiceCommands.ts`).
 
 `@types/react` / `@types/react-dom` are devDependencies on purpose: without them React imports silently type as `any` and `key` on function components fails to type-check.
 
@@ -53,6 +64,7 @@ There is no test suite and no single-test command — `lint` is the primary auto
 - `firebase-applet-config.json` is committed and loaded directly by [src/firebase.ts](src/firebase.ts#L4). It includes a non-default `firestoreDatabaseId` (`ai-studio-198437a8-7e10-4c8b-9a00-22acac4c2d1f`) — always pass it to `getFirestore(app, firebaseConfig.firestoreDatabaseId)`. The same database ID is also declared in [firebase.json](firebase.json) for the rules deploy target.
 - The Firebase project ID is `gen-lang-client-0920383400` (see [.firebaserc](.firebaserc)). The two names look unrelated; do not confuse the project ID with the database ID.
 - `firebase-blueprint.json` documents the Firestore entity schemas (User, Location, Product, Basket, InventoryLog, CountingSession, LearningDataEntry, AppSettings, FridgeConfig). The blueprint and Firestore rules historically disagreed on `Basket` shape; the blueprint now notes that **rules are authoritative** (`name`, `trayCount`, `vialsPerTray`, `looseVials`, `qrCode` required).
+- The phone app cannot use Google sign-in inside Expo Go. Users attach a password to their Google-backed account from the web app (Settings → "Phone app sign-in", [src/components/MobilePasswordCard.tsx](src/components/MobilePasswordCard.tsx), `linkWithCredential`) and the phone signs in with email + password as the same uid/role. This requires the Email/Password provider to be enabled once in the Firebase console.
 - `firestore.rules` enforces role-based access. **Two** bootstrap admin emails are hardcoded in both [firestore.rules](firestore.rules#L15) and [src/contexts/AuthContext.tsx](src/contexts/AuthContext.tsx#L34-L36): `duval.villegas@mdexam.com` and `duval.villegas@gmail.com`. First sign-in for either auto-creates a user doc with role `admin`; other emails must be present in `/whitelist/{email}` (lowercase) or sign-in is rejected.
 - `vite.config.ts` has a comment explicitly warning that file watching is controlled via `DISABLE_HMR` to prevent flickering during AI Studio agent edits — don't change that logic casually.
 
@@ -98,6 +110,10 @@ There are two scan flows in the codebase, but only one is canonical:
 | `TRAY:` / `PRODUCT:` | informational only | no state change |
 
 The number of shelves per fridge is `locations.shelfCount` (default 5, editable on the Locations page, which also renders a shelf-by-shelf map with print buttons). `config/appSettings.fridges` (Settings → Fridge Configuration) is legacy and is not read by the count flow.
+
+### Voice / typed commands ([src/shared/voiceCommands.ts](src/shared/voiceCommands.ts))
+
+`parseVoiceCommands(text)` turns a sentence into commands: `fridge <query>`, `shelf <n>`, `basket <query>`, `count {trays, loose}`, `empty`, `full`, `save`, `back`. Spoken numbers are normalised first ("twenty two" → 22). `matchByName(query, items)` does the fuzzy pick of a fridge/basket. The mobile app feeds it from push-to-talk (expo-audio clip → Gemini transcript, `mobile/src/lib/voice.ts`, `transcribeCommand` in `mobile/src/lib/ai.ts`) and from a typed/dictated text field; the web app does not use it yet.
 
 ## Print job architecture
 

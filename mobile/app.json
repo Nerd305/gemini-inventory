@@ -1,0 +1,49 @@
+{
+  "expo": {
+    "name": "VialTrack Count",
+    "slug": "vialtrack-count",
+    "version": "1.0.0",
+    "scheme": "vialtrack",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0f766e"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.greenstone.vialtrack",
+      "infoPlist": {
+        "NSCameraUsageDescription": "VialTrack scans fridge, shelf and basket labels and photographs trays to count vials.",
+        "NSLocalNetworkUsageDescription": "Needed to load the app from the development server on your Mac."
+      }
+    },
+    "android": {
+      "package": "com.greenstone.vialtrack",
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "permissions": [
+        "CAMERA"
+      ],
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "VialTrack scans fridge, shelf and basket labels and photographs trays to count vials."
+        }
+      ],
+      "expo-audio"
+    ]
+  }
+}

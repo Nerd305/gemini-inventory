@@ -11,9 +11,18 @@ Tier numbers match the audit framing: lower tier = higher severity.
 - **v1.0.7** — AI Performance Stats panel now reads live from Firestore (`learningData`). Replaced fake hardcoded stats with `getCountFromServer` + `getAggregateFromServer` aggregates and a 28-day weekly trend bucket. Empty-state copy added. See [src/lib/learning.ts](src/lib/learning.ts), [src/pages/Settings.tsx](src/pages/Settings.tsx).
 - **v1.0.8** — Live vials/baskets counter on `/count` (TopBar). Subscribes to the active `countingSessions` doc via `onSnapshot`; shows "N baskets" and "Δ ±N vials" pills, replacing the misleading "🧠 Learning" badge. See [src/contexts/CountingSessionContext.tsx](src/contexts/CountingSessionContext.tsx), [src/pages/CountSession.tsx](src/pages/CountSession.tsx).
 - **v1.0.8** — Tier 1 #1 (`lastScanRef` ReferenceError on `/count`) — fixed inline; required for the counter to be testable.
+- **v1.0.10** — `mobile/`: Expo SDK 57 iPhone app for Expo Go with the same fridge → shelf → basket flow, barcode scanning (expo-camera), a visual AI counter (photo → Gemini → every vial boxed on the image), push-to-talk voice commands ("fridge 2 shelf 3", "four trays and twenty-two vials", "save") transcribed by Gemini and parsed by the shared `voiceCommands.ts`, on-the-fly label printing, and email/password sign-in against the same Firebase users (password set from the web app's new "Phone app sign-in" card). Count core moved to `src/shared/inventoryCore.ts` (db-parameterised) so web and phone share one write path.
 - **v1.0.9** — Scan-and-tap counting rebuilt around the physical layout (fridge → shelf → basket, back/front × left/right slots). Baskets are counted as full trays + loose vials in one screen (`QuickCount`), every level is reachable by scan *or* tap, new baskets are registered and labelled in place, and shelf/fridge/basket labels print on the fly to the 2×1.5" Epson stock (`2x1.5` format added across web, rules and desktop). iPhone camera selection now prefers the main back camera. Locations page gained `shelfCount` and a shelf-by-shelf map with print buttons. `@types/react` installed so the whole tree type-checks. See [src/lib/inventory.ts](src/lib/inventory.ts), [src/lib/scanCodes.ts](src/lib/scanCodes.ts), [src/contexts/CountingSessionContext.tsx](src/contexts/CountingSessionContext.tsx), [src/components/counting/](src/components/counting/).
 
 ---
+
+## Loose ends after v1.0.10 (Expo app)
+
+- [ ] **Firebase console: enable Email/Password** (Authentication → Sign-in method) — required before the phone can sign in. Then set a password on the web app (Settings → Phone app sign-in).
+- [ ] **Try it in Expo Go** — first real device run; Metro bundling was verified with `expo export`, not on a phone. Watch for: camera permission prompt, barcode decode speed on the 2×1.5 labels, Gemini latency for the AI counter and voice, WAV recording on iOS (`mobile/src/lib/voice.ts`).
+- [ ] **Voice on the web app** — `src/shared/voiceCommands.ts` is shared; wire iOS Safari's `webkitSpeechRecognition` or a text field into `/count`.
+- [ ] **Dev build** (`npx expo run:ios` / EAS) when Expo Go's limits bite: Google sign-in, custom icon, background behaviour.
+- [ ] **Session CSV export on mobile** — only the web End screen exports; the phone completes the session and points to the web app.
 
 ## Loose ends after v1.0.9 (scan-and-tap counting)
 
