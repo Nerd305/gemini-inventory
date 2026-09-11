@@ -5,106 +5,306 @@
       "description": "A user of the inventory system",
       "type": "object",
       "properties": {
-        "email": { "type": "string", "format": "email" },
-        "role": { "type": "string", "enum": ["admin", "staff"] },
-        "displayName": { "type": "string" }
+        "email": {
+          "type": "string",
+          "format": "email"
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "admin",
+            "staff"
+          ]
+        },
+        "displayName": {
+          "type": "string"
+        }
       },
-      "required": ["email", "role"]
+      "required": [
+        "email",
+        "role"
+      ]
     },
     "Location": {
       "title": "Location",
       "description": "A storage location like a refrigerator or shelf",
       "type": "object",
       "properties": {
-        "name": { "type": "string" },
-        "description": { "type": "string" },
-        "type": { "type": "string", "enum": ["fridge", "shelf", "cabinet"] },
-        "qrCode": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "fridge",
+            "shelf",
+            "cabinet"
+          ]
+        },
+        "qrCode": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "shelfCount": {
+          "type": "number",
+          "description": "Number of shelves, top → bottom. Shelf IDs are `${locationId}-${n}` and shelf QR labels encode `SHELF:${locationId}-${n}`."
+        }
       },
-      "required": ["name", "type", "qrCode", "createdAt"]
+      "required": [
+        "name",
+        "type",
+        "qrCode",
+        "createdAt"
+      ]
     },
     "Shelf": {
       "title": "Shelf",
       "description": "A shelf inside a fridge/location, holding basket slots",
       "type": "object",
       "properties": {
-        "index": { "type": "number", "description": "Zero-based shelf position from top" },
-        "name": { "type": "string" },
-        "basketSlotsPerShelf": { "type": "number" },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "index": {
+          "type": "number",
+          "description": "Zero-based shelf position from top"
+        },
+        "name": {
+          "type": "string"
+        },
+        "basketSlotsPerShelf": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
       },
-      "required": ["index", "createdAt"]
+      "required": [
+        "index",
+        "createdAt"
+      ]
     },
     "Product": {
       "title": "Product",
       "description": "A medication or product in inventory",
       "type": "object",
       "properties": {
-        "name": { "type": "string" },
-        "category": { "type": "string" },
-        "description": { "type": "string" },
-        "reorderPoint": { "type": "number" },
-        "currentStock": { "type": "number" },
-        "barcode": { "type": "string" },
-        "imageUrl": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" }
+        "name": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "reorderPoint": {
+          "type": "number"
+        },
+        "currentStock": {
+          "type": "number"
+        },
+        "barcode": {
+          "type": "string"
+        },
+        "imageUrl": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
       },
-      "required": ["name", "category", "currentStock", "createdAt"]
+      "required": [
+        "name",
+        "category",
+        "currentStock",
+        "createdAt"
+      ]
     },
     "Basket": {
       "title": "Basket",
-      "description": "A physical basket containing trays of vials of a product. NOTE: Firestore rules are authoritative for the on-disk shape (`name`, `trayCount`, `vialsPerTray`, `looseVials`); the optional fields below were added in phase 1 of the new counting system.",
+      "description": "A physical bin (plastic basket) on a fridge shelf holding a variable number of trays of ONE product. Firestore rules are authoritative for the on-disk shape. QR label encodes `BSKT:${basketId}`.",
       "type": "object",
       "properties": {
-        "productId": { "type": "string" },
-        "locationId": { "type": "string" },
-        "name": { "type": "string" },
-        "trayCount": { "type": "number" },
-        "vialsPerTray": { "type": "number" },
-        "looseVials": { "type": "number" },
-        "qrCode": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" },
-        "shelfId": { "type": "string", "description": "Optional. ID of the shelf this basket sits on." },
-        "shelfPosition": { "type": "number", "description": "Optional. Zero-based slot index on the shelf." },
-        "lastCountedAt": { "type": "string", "format": "date-time", "description": "Optional. Timestamp of last count." },
-        "lastCountedBy": { "type": "string", "description": "Optional. UID of user who last counted." }
+        "productId": {
+          "type": "string"
+        },
+        "locationId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "trayCount": {
+          "type": "number",
+          "description": "Declared number of trays currently in the bin. Bins differ; counters adjust this during a count."
+        },
+        "vialsPerTray": {
+          "type": "number",
+          "description": "Tray capacity (pockets). Default 25 (5×5 molded tray)."
+        },
+        "looseVials": {
+          "type": "number"
+        },
+        "qrCode": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "shelfId": {
+          "type": "string",
+          "description": "Optional. ID of the shelf this basket sits on."
+        },
+        "shelfPosition": {
+          "type": "number",
+          "description": "Optional. Zero-based slot index on the shelf."
+        },
+        "lastCountedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Optional. Timestamp of the last finished count of this bin."
+        },
+        "lastCountedBy": {
+          "type": "string",
+          "description": "Optional. UID of user who last counted."
+        },
+        "totalVials": {
+          "type": "number",
+          "description": "Denormalized: sum of tray counts for slots 1..trayCount + looseVials at the last finished count. Absent until a bin has been finished once."
+        }
       },
-      "required": ["productId", "locationId", "name", "trayCount", "vialsPerTray", "looseVials", "qrCode", "createdAt"]
+      "required": [
+        "productId",
+        "locationId",
+        "name",
+        "trayCount",
+        "vialsPerTray",
+        "looseVials",
+        "qrCode",
+        "createdAt"
+      ]
     },
     "Tray": {
       "title": "Tray",
-      "description": "An individual tray inside a basket; tracked separately for fine-grained counting",
+      "description": "One tray slot inside a bin, stored at baskets/{basketId}/trays/slot-N (N is 1-based). Written by TrayCount.tsx via recordTrayCount(); validated by isValidTray in firestore.rules. Optional tray QR labels encode `TRAY:${basketId}-${slot}`.",
       "type": "object",
       "properties": {
-        "index": { "type": "number" },
-        "vialCount": { "type": "number" },
-        "isFull": { "type": "boolean" },
-        "lastCountedAt": { "type": "string", "format": "date-time" },
-        "lastCountedBy": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "slot": {
+          "type": "number",
+          "description": "1-based tray position inside the bin"
+        },
+        "count": {
+          "type": "number",
+          "description": "Vials actually present (≤ vialsPerTray for a full tray)"
+        },
+        "countedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "countedBy": {
+          "type": "string",
+          "description": "UID of the counter"
+        },
+        "sessionId": {
+          "type": "string",
+          "description": "countingSessions doc that last wrote this tray (used for gross per-session totals)"
+        },
+        "aiPrediction": {
+          "type": "number",
+          "description": "Gemini count before the user corrected it"
+        },
+        "lotNumber": {
+          "type": "string",
+          "description": "Lot # read from the compounding label"
+        },
+        "bud": {
+          "type": "string",
+          "description": "Beyond-use date, YYYY-MM-DD when parseable"
+        },
+        "dateCompounded": {
+          "type": "string",
+          "description": "YYYY-MM-DD when parseable"
+        },
+        "labelText": {
+          "type": "string",
+          "description": "Product + strength as printed on the tray label"
+        }
       },
-      "required": ["index", "vialCount", "createdAt"]
+      "required": [
+        "slot",
+        "count"
+      ]
     },
     "InventoryLog": {
       "title": "InventoryLog",
       "description": "A log of an inventory action",
       "type": "object",
       "properties": {
-        "productId": { "type": "string" },
-        "locationId": { "type": "string" },
-        "basketId": { "type": "string" },
-        "userId": { "type": "string" },
-        "action": { "type": "string", "enum": ["ADD", "REMOVE", "ADJUST", "COUNT"] },
-        "amount": { "type": "number" },
-        "previousCount": { "type": "number" },
-        "newCount": { "type": "number" },
-        "reason": { "type": "string" },
-        "timestamp": { "type": "string", "format": "date-time" }
+        "productId": {
+          "type": "string"
+        },
+        "locationId": {
+          "type": "string"
+        },
+        "basketId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "ADD",
+            "REMOVE",
+            "ADJUST",
+            "COUNT"
+          ],
+          "description": "COUNT entries are written when a counting session completes: amount/newCount = reconciled stock, previousCount = stock before."
+        },
+        "amount": {
+          "type": "number"
+        },
+        "previousCount": {
+          "type": "number"
+        },
+        "newCount": {
+          "type": "number"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "sessionId": {
+          "type": "string",
+          "description": "Set on COUNT entries written by Complete & Sync"
+        }
       },
-      "required": ["productId", "userId", "action", "amount", "timestamp"]
+      "required": [
+        "productId",
+        "userId",
+        "action",
+        "amount",
+        "timestamp"
+      ]
     },
     "AppSettings": {
       "title": "AppSettings",
@@ -113,100 +313,236 @@
       "properties": {
         "fridges": {
           "type": "array",
-          "items": { "$ref": "#/entities/FridgeConfig" }
+          "items": {
+            "$ref": "#/entities/FridgeConfig"
+          }
         },
-        "updatedAt": { "type": "string", "format": "date-time" },
-        "updatedBy": { "type": "string" }
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedBy": {
+          "type": "string"
+        }
       },
-      "required": ["fridges"]
+      "required": [
+        "fridges"
+      ]
     },
     "FridgeConfig": {
       "title": "FridgeConfig",
       "description": "An admin-managed entry inside AppSettings.fridges that defines a fridge's layout",
       "type": "object",
       "properties": {
-        "id": { "type": "string", "description": "Stable ID, e.g. 'fridge-1'" },
-        "name": { "type": "string", "description": "Display name, e.g. 'Main Refrigerator'" },
-        "shelfCount": { "type": "number" },
-        "basketSlotsPerShelf": { "type": "number" }
+        "id": {
+          "type": "string",
+          "description": "Stable ID, e.g. 'fridge-1'"
+        },
+        "name": {
+          "type": "string",
+          "description": "Display name, e.g. 'Main Refrigerator'"
+        },
+        "shelfCount": {
+          "type": "number"
+        },
+        "basketSlotsPerShelf": {
+          "type": "number"
+        }
       },
-      "required": ["id", "name", "shelfCount", "basketSlotsPerShelf"]
+      "required": [
+        "id",
+        "name",
+        "shelfCount",
+        "basketSlotsPerShelf"
+      ]
     },
     "CountingSession": {
       "title": "CountingSession",
-      "description": "An in-progress or completed inventory count session",
+      "description": "An in-progress or completed inventory count. Created lazily on the first recognized scan in /count.",
       "type": "object",
       "properties": {
-        "userId": { "type": "string" },
-        "fridgeId": { "type": "string" },
-        "status": { "type": "string", "enum": ["in_progress", "completed", "abandoned"] },
-        "startedAt": { "type": "string", "format": "date-time" },
-        "completedAt": { "type": "string", "format": "date-time" }
+        "userId": {
+          "type": "string"
+        },
+        "userName": {
+          "type": "string"
+        },
+        "locationId": {
+          "type": "string"
+        },
+        "fridgeId": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "active",
+            "in_progress",
+            "paused",
+            "completed",
+            "abandoned"
+          ]
+        },
+        "activeBasketId": {
+          "type": "string",
+          "description": "Bin currently open in this session (soft lock); null when none"
+        },
+        "countedBaskets": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Bin IDs touched in this session"
+        },
+        "progress": {
+          "type": "object",
+          "properties": {
+            "totalVials": {
+              "type": "number",
+              "description": "Net change vs. previously stored tray counts"
+            },
+            "vialsCounted": {
+              "type": "number",
+              "description": "Gross vials counted this session"
+            },
+            "traysCounted": {
+              "type": "number",
+              "description": "Distinct trays counted this session"
+            },
+            "basketsCounted": {
+              "type": "number",
+              "description": "Bins finished this session"
+            }
+          }
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "completedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
       },
-      "required": ["userId", "status", "startedAt"]
+      "required": [
+        "userId",
+        "status",
+        "startedAt"
+      ]
     },
     "LearningDataEntry": {
       "title": "LearningDataEntry",
       "description": "A captured sample (image + label) used to train the vial-detection model",
       "type": "object",
       "properties": {
-        "imageBase64": { "type": "string" },
-        "aiPrediction": { "type": "number" },
-        "userFinalCount": { "type": "number" },
-        "delta": { "type": "number" },
+        "imageBase64": {
+          "type": "string"
+        },
+        "aiPrediction": {
+          "type": "number"
+        },
+        "userFinalCount": {
+          "type": "number"
+        },
+        "delta": {
+          "type": "number"
+        },
         "capColors": {
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         },
-        "productId": { "type": "string" },
-        "trayId": { "type": "string" },
-        "basketId": { "type": "string" },
-        "userId": { "type": "string" },
-        "timestamp": { "type": "string", "format": "date-time" },
-        "notes": { "type": "string" }
+        "productId": {
+          "type": "string"
+        },
+        "trayId": {
+          "type": "string"
+        },
+        "basketId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "notes": {
+          "type": "string"
+        }
       },
-      "required": ["userFinalCount", "delta", "productId", "trayId", "basketId", "userId", "timestamp"]
+      "required": [
+        "userFinalCount",
+        "delta",
+        "productId",
+        "trayId",
+        "basketId",
+        "userId",
+        "timestamp"
+      ]
     }
   },
   "firestore": {
     "/users/{userId}": {
-      "schema": { "$ref": "#/entities/User" },
+      "schema": {
+        "$ref": "#/entities/User"
+      },
       "description": "User profiles"
     },
     "/locations/{locationId}": {
-      "schema": { "$ref": "#/entities/Location" },
+      "schema": {
+        "$ref": "#/entities/Location"
+      },
       "description": "Storage locations"
     },
     "/locations/{locationId}/shelves/{shelfId}": {
-      "schema": { "$ref": "#/entities/Shelf" },
+      "schema": {
+        "$ref": "#/entities/Shelf"
+      },
       "description": "Shelves within a fridge/location"
     },
     "/products/{productId}": {
-      "schema": { "$ref": "#/entities/Product" },
+      "schema": {
+        "$ref": "#/entities/Product"
+      },
       "description": "Products catalog"
     },
     "/baskets/{basketId}": {
-      "schema": { "$ref": "#/entities/Basket" },
+      "schema": {
+        "$ref": "#/entities/Basket"
+      },
       "description": "Physical baskets"
     },
     "/baskets/{basketId}/trays/{trayId}": {
-      "schema": { "$ref": "#/entities/Tray" },
+      "schema": {
+        "$ref": "#/entities/Tray"
+      },
       "description": "Trays within a basket"
     },
     "/inventoryLogs/{logId}": {
-      "schema": { "$ref": "#/entities/InventoryLog" },
+      "schema": {
+        "$ref": "#/entities/InventoryLog"
+      },
       "description": "Audit logs for inventory changes"
     },
     "/config/{configId}": {
-      "schema": { "$ref": "#/entities/AppSettings" },
+      "schema": {
+        "$ref": "#/entities/AppSettings"
+      },
       "description": "App-wide configuration. The well-known doc ID is 'appSettings'."
     },
     "/countingSessions/{sessionId}": {
-      "schema": { "$ref": "#/entities/CountingSession" },
+      "schema": {
+        "$ref": "#/entities/CountingSession"
+      },
       "description": "Inventory counting sessions"
     },
     "/learningData/{entryId}": {
-      "schema": { "$ref": "#/entities/LearningDataEntry" },
+      "schema": {
+        "$ref": "#/entities/LearningDataEntry"
+      },
       "description": "Training samples for the vial-detection model"
     }
   }

@@ -10,6 +10,8 @@ import { Plus, Loader2, Camera, Sparkles, Printer, Pencil, Trash2, Package, Filt
 import { analyzeProductImage } from '../lib/ai';
 import { LabelPrinter } from '../components/LabelPrinter';
 import { HelpTooltip } from '../components/HelpTooltip';
+import { basketTotal, describeShelf } from '../lib/inventory';
+import { formatDistanceToNow } from 'date-fns';
 
 interface Product {
   id: string;
@@ -373,17 +375,18 @@ export default function Products() {
                   <MapPin className="h-4 w-4 mr-1 text-blue-600" /> Known Locations
                 </Label>
                 {productBaskets.length === 0 ? (
-                  <p className="text-sm text-gray-500 italic">No baskets or trays registered for this product.</p>
+                  <p className="text-sm text-gray-500 italic">No bins registered for this product yet — add one under Bins.</p>
                 ) : (
                   <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
                     {productBaskets.map(basket => {
-                      const locName = locationsMap[basket.locationId] || 'Unknown Location';
-                      const totalVials = (basket.trayCount * basket.vialsPerTray) + basket.looseVials;
+                      const locName = describeShelf(basket.shelfId, (id) => locationsMap[id]) || locationsMap[basket.locationId] || 'Unknown Location';
+                      const totalVials = basketTotal(basket);
+                      const lastCounted = basket.lastCountedAt ? `counted ${formatDistanceToNow(new Date(basket.lastCountedAt))} ago` : 'not counted yet';
                       return (
                         <div key={basket.id} className="flex justify-between items-center bg-gray-50 p-2 rounded border text-sm">
                           <div>
                             <p className="font-medium text-gray-900">{locName}</p>
-                            <p className="text-xs text-gray-500">{basket.name} • {basket.trayCount} trays ({basket.vialsPerTray}/tray) + {basket.looseVials} loose</p>
+                            <p className="text-xs text-gray-500">{basket.name} • {basket.trayCount} trays ({basket.vialsPerTray}/tray) + {basket.looseVials} loose • {lastCounted}</p>
                           </div>
                           <div className="text-right">
                             <span className="font-bold text-blue-600">{totalVials}</span>

@@ -43,7 +43,9 @@ service cloud.firestore {
              request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() < 100 &&
              request.resource.data.type in ['fridge', 'shelf', 'cabinet'] &&
              request.resource.data.qrCode is string && request.resource.data.qrCode.size() < 100 &&
-             request.resource.data.createdAt is string;
+             request.resource.data.createdAt is string &&
+             (!request.resource.data.keys().hasAny(['description']) || request.resource.data.description is string) &&
+             (!request.resource.data.keys().hasAny(['shelfCount']) || (request.resource.data.shelfCount is number && request.resource.data.shelfCount >= 0));
     }
 
     function isValidProduct() {
@@ -68,7 +70,24 @@ service cloud.firestore {
              (!request.resource.data.keys().hasAny(['shelfPosition']) || request.resource.data.shelfPosition is number) &&
              (!request.resource.data.keys().hasAny(['lastCountedAt']) || request.resource.data.lastCountedAt is string) &&
              (!request.resource.data.keys().hasAny(['lastCountedBy']) || request.resource.data.lastCountedBy is string) &&
+             (!request.resource.data.keys().hasAny(['totalVials']) || (request.resource.data.totalVials is number && request.resource.data.totalVials >= 0)) &&
              (!request.resource.data.keys().hasAny(['updatedAt']) || request.resource.data.updatedAt is string);
+    }
+
+    // Tray docs live at baskets/{basketId}/trays/slot-N. Written with merge:true, so the
+    // validator sees the merged document.
+    function isValidTray() {
+      return hasRequiredFields(['slot', 'count']) &&
+             request.resource.data.slot is number && request.resource.data.slot >= 1 &&
+             request.resource.data.count is number && request.resource.data.count >= 0 &&
+             (!request.resource.data.keys().hasAny(['countedAt']) || request.resource.data.countedAt is string) &&
+             (!request.resource.data.keys().hasAny(['countedBy']) || request.resource.data.countedBy is string) &&
+             (!request.resource.data.keys().hasAny(['sessionId']) || request.resource.data.sessionId is string) &&
+             (!request.resource.data.keys().hasAny(['aiPrediction']) || request.resource.data.aiPrediction is number) &&
+             (!request.resource.data.keys().hasAny(['lotNumber']) || request.resource.data.lotNumber is string) &&
+             (!request.resource.data.keys().hasAny(['bud']) || request.resource.data.bud is string) &&
+             (!request.resource.data.keys().hasAny(['dateCompounded']) || request.resource.data.dateCompounded is string) &&
+             (!request.resource.data.keys().hasAny(['labelText']) || request.resource.data.labelText is string);
     }
 
     function isValidInventoryLog() {
@@ -174,10 +193,10 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // Trays live as a subcollection beneath each basket.
+    // Trays live as a subcollection beneath each basket (one doc per tray slot).
     match /baskets/{basketId}/trays/{trayId} {
       allow read: if isAuthenticated();
-      allow create, update: if isStaffOrAdmin();
+      allow create, update: if isStaffOrAdmin() && isValidTray();
       allow delete: if isAdmin();
     }
 

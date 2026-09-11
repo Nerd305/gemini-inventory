@@ -4,6 +4,8 @@ import { CheckCircle2, AlertTriangle, ArrowLeft, Loader2 } from 'lucide-react';
 import { db, handleFirestoreError, OperationType } from '../../firebase';
 import { Button } from '../ui/button';
 import { useCountingSession, type ParsedScan } from '../../contexts/CountingSessionContext';
+import { useLocations } from '../../hooks/useLocations';
+import { describeShelf } from '../../lib/inventory';
 
 interface PutBackConfirmProps {
   basketId: string;
@@ -27,6 +29,8 @@ export default function PutBackConfirm({
   onBackToBasket,
 }: PutBackConfirmProps) {
   const { lastScan } = useCountingSession();
+  const { nameOf } = useLocations();
+  const shelfLabel = (id: string | null) => describeShelf(id, nameOf);
   const [outcome, setOutcome] = useState<Outcome>({ kind: 'waiting' });
   const [moving, setMoving] = useState(false);
   const baselineRef = useRef<ParsedScan | null>(lastScan);
@@ -59,7 +63,7 @@ export default function PutBackConfirm({
   const handleMove = async (newShelfId: string) => {
     setMoving(true);
     try {
-      await updateDoc(doc(db, 'baskets', basketId), { shelfId: newShelfId });
+      await updateDoc(doc(db, 'baskets', basketId), { shelfId: newShelfId, updatedAt: new Date().toISOString() });
       onComplete();
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `baskets/${basketId}`);
@@ -72,7 +76,7 @@ export default function PutBackConfirm({
     return (
       <div className="flex h-full flex-col items-center justify-center px-6 bg-green-50 animate-in fade-in">
         <CheckCircle2 className="h-12 w-12 text-green-600 mb-2" />
-        <p className="text-lg font-semibold text-green-900">Returned to Shelf {outcome.shelfId}</p>
+        <p className="text-lg font-semibold text-green-900">Returned to {shelfLabel(outcome.shelfId)}</p>
         <p className="text-sm text-green-800 mt-1">{productName}</p>
       </div>
     );
@@ -86,9 +90,9 @@ export default function PutBackConfirm({
           <span className="text-xs font-bold uppercase tracking-wide">Wrong Shelf</span>
         </div>
         <p className="text-sm text-amber-900 mb-3">
-          This is <span className="font-bold">Shelf {outcome.scannedShelfId}</span>, but{' '}
+          This is <span className="font-bold">{shelfLabel(outcome.scannedShelfId)}</span>, but{' '}
           <span className="font-bold">{productName}</span> belongs on{' '}
-          <span className="font-bold">Shelf {expectedShelfId}</span>. Move it?
+          <span className="font-bold">{shelfLabel(expectedShelfId)}</span>. Move it?
         </p>
         <div className="grid grid-cols-2 gap-2 mt-auto">
           <Button variant="outline" className="h-11" onClick={onBackToBasket} disabled={moving}>
@@ -99,7 +103,7 @@ export default function PutBackConfirm({
             onClick={() => handleMove(outcome.scannedShelfId)}
             disabled={moving}
           >
-            {moving ? <Loader2 className="h-4 w-4 animate-spin" /> : `Move to Shelf ${outcome.scannedShelfId}`}
+            {moving ? <Loader2 className="h-4 w-4 animate-spin" /> : `Move here`}
           </Button>
         </div>
       </div>
@@ -114,9 +118,9 @@ export default function PutBackConfirm({
           <span className="text-xs font-bold uppercase tracking-wide">Assign Shelf</span>
         </div>
         <p className="text-sm text-teal-900 mb-3">
-          This basket has no assigned shelf. Assign{' '}
+          This bin has no assigned shelf. Assign{' '}
           <span className="font-bold">{productName}</span> to{' '}
-          <span className="font-bold">Shelf {outcome.scannedShelfId}</span>?
+          <span className="font-bold">{shelfLabel(outcome.scannedShelfId)}</span>?
         </p>
         <div className="grid grid-cols-2 gap-2 mt-auto">
           <Button variant="outline" className="h-11" onClick={onBackToBasket} disabled={moving}>
@@ -138,15 +142,15 @@ export default function PutBackConfirm({
     <div className="flex h-full flex-col px-5 py-3">
       <div className="flex items-center text-teal-700 mb-1">
         <CheckCircle2 className="h-5 w-5 mr-2" />
-        <span className="text-xs font-bold uppercase tracking-wide">Basket Complete</span>
+        <span className="text-xs font-bold uppercase tracking-wide">Bin Complete</span>
       </div>
       <p className="text-base font-semibold text-gray-900 mb-1">{productName}</p>
       <p className="text-sm text-gray-700">
         Scan the shelf QR to confirm return
-        {expectedShelfId ? <> to <span className="font-bold">Shelf {expectedShelfId}</span></> : null}.
+        {expectedShelfId ? <> to <span className="font-bold">{shelfLabel(expectedShelfId)}</span></> : null}.
       </p>
       <Button variant="ghost" className="mt-auto self-start" onClick={onBackToBasket}>
-        <ArrowLeft className="h-4 w-4 mr-1.5" /> Back to basket
+        <ArrowLeft className="h-4 w-4 mr-1.5" /> Back to bin
       </Button>
     </div>
   );

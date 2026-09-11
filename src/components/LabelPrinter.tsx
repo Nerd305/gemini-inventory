@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { collection, addDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
@@ -19,6 +19,8 @@ interface LabelPrinterProps {
   code: string;
   title: string;
   subtitle?: string;
+  /** Initial label size; the user can still switch it in the dialog. */
+  defaultFormat?: LabelFormat;
 }
 
 const PAGE_SIZES: Record<LabelFormat, string> = {
@@ -29,8 +31,12 @@ const PAGE_SIZES: Record<LabelFormat, string> = {
   'canon-integrated': '8.5in 11in',
 };
 
-export function LabelPrinter({ isOpen, onClose, code, title, subtitle }: LabelPrinterProps) {
-  const [format, setFormat] = useState<LabelFormat>('4x3');
+export function LabelPrinter({ isOpen, onClose, code, title, subtitle, defaultFormat = '4x3' }: LabelPrinterProps) {
+  const [format, setFormat] = useState<LabelFormat>(defaultFormat);
+
+  useEffect(() => {
+    if (isOpen) setFormat(defaultFormat);
+  }, [isOpen, defaultFormat]);
   const [isSending, setIsSending] = useState(false);
 
   const handleSendToPrintStation = async () => {

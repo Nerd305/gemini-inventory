@@ -3,6 +3,7 @@ import path from 'path';
 
 const versionFilePath = path.join(process.cwd(), 'src/lib/version.ts');
 const packageJsonPath = path.join(process.cwd(), 'package.json');
+const indexHtmlPath = path.join(process.cwd(), 'index.html');
 
 function bump() {
   const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
@@ -15,6 +16,12 @@ function bump() {
   fs.writeFileSync(packageJsonPath, JSON.stringify(pkg, null, 2) + '\n');
 
   fs.writeFileSync(versionFilePath, `export const APP_VERSION = '${nextVersion}';\n`);
+
+  // Keep the browser tab title in step with the badge shown in the UI.
+  if (fs.existsSync(indexHtmlPath)) {
+    const html = fs.readFileSync(indexHtmlPath, 'utf8');
+    fs.writeFileSync(indexHtmlPath, html.replace(/<title>MedInventory v[^<]*<\/title>/, `<title>MedInventory v${nextVersion}</title>`));
+  }
 
   console.log(`Version bumped from ${currentVersion} to ${nextVersion}`);
 }

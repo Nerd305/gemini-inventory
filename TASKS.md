@@ -8,6 +8,8 @@ Tier numbers match the audit framing: lower tier = higher severity.
 
 ## Recently shipped
 
+- **v1.0.9** — Bins / trays / fridges model to match the physical fridge. Bins hold a *variable* number of trays (`trayCount` stepper + loose-vial stepper live in the count panel; the old hardcoded 6-slot grid is gone). Tray counter defaults to a full tray (25), shows a 5×5 pocket grid, and the Gemini prompt now knows the tray geometry and transcribes the compounding label (lot #, date compounded, BUD) into the tray doc with expiry flags. New **/bins** page (create/edit, fridge→shelf grouping, staleness, tray detail, `BSKT:` label + batch `TRAY:` labels); **Locations** gained `shelfCount` and batch `SHELF:` labels — previously nothing in the app printed the codes `/count` expects. `TRAY:` scans open the slot directly. Finishing a bin writes `totalVials`/`lastCountedAt`; **Complete & Sync** reconciles `products.currentStock` from bins and logs `COUNT` entries. Sessions are created lazily (no more ghost sessions from StrictMode), track gross vials/trays, and are marked paused/abandoned on exit. Dashboard "Today's Count" coverage card; mobile nav trimmed to Home/Count/Bins/Items/More. See [src/lib/inventory.ts](src/lib/inventory.ts).
+
 - **v1.0.7** — AI Performance Stats panel now reads live from Firestore (`learningData`). Replaced fake hardcoded stats with `getCountFromServer` + `getAggregateFromServer` aggregates and a 28-day weekly trend bucket. Empty-state copy added. See [src/lib/learning.ts](src/lib/learning.ts), [src/pages/Settings.tsx](src/pages/Settings.tsx).
 - **v1.0.8** — Live vials/baskets counter on `/count` (TopBar). Subscribes to the active `countingSessions` doc via `onSnapshot`; shows "N baskets" and "Δ ±N vials" pills, replacing the misleading "🧠 Learning" badge. See [src/contexts/CountingSessionContext.tsx](src/contexts/CountingSessionContext.tsx), [src/pages/CountSession.tsx](src/pages/CountSession.tsx).
 - **v1.0.8** — Tier 1 #1 (`lastScanRef` ReferenceError on `/count`) — fixed inline; required for the counter to be testable.
@@ -54,8 +56,17 @@ These are the "use the data, not just collect it" follow-ups from the AI Perform
 - [ ] **Phase 4a** — Per-product confidence flag. Surface "this product historically undercounts by ~1.5 vials" as a warning banner in TrayCount. Does not auto-modify the AI's number. Cheap, deterministic.
 - [ ] **Phase 4b** — Few-shot prompt augmentation. Inject top-3 past corrections into Gemini prompts. Requires Phase 2 done + an A/B harness. Real "learning."
 
-## Counter follow-ups (defer until requested)
+## Counter follow-ups
 
-- [ ] **Gross vials counted (not just delta)** — current pill shows net Δ vs. previous count. A pharmacist mid-session may want "vials touched this session." Add a separate `progress.totalVialsCounted` field and increment by `count` not `countDiff`.
-- [ ] **Trays counted (not just baskets)** — `countedBaskets` array gives baskets touched. Trays are a finer-grain unit; track separately if useful.
-- [ ] **Mobile rendering** — counter pills are `hidden sm:flex` (desktop only). Move to a more compact display on phones.
+- [x] **Gross vials counted (not just delta)** — `progress.vialsCounted` (v1.0.9). Tray docs carry `sessionId` so a re-count in the same session replaces instead of adding.
+- [x] **Trays counted (not just baskets)** — `progress.traysCounted` (v1.0.9).
+- [x] **Mobile rendering** — compact "bins · trays · vials" pill always visible; Δ pill desktop-only (v1.0.9).
+
+## Bins / trays follow-ups (v1.0.9 loose ends)
+
+- [ ] **Resume a paused session** — sessions are marked `paused` on exit when bins were counted, but there is no way to pick one back up; the dashboard hides them after 24h. Either add resume or mark them `abandoned` too.
+- [ ] **Tray identity vs. slot** — trays are addressed by slot (`slot-N`). If lots need to be tracked as trays move between bins, promote trays to their own docs keyed by lot and reference them from bins. Lot/BUD per slot is captured today, which is enough for expiry flags.
+- [ ] **BUD report** — tray docs now carry `bud`; add a Reports view listing trays expiring in the next 30 days across all bins (needs a collection-group query on `trays` + an index).
+- [ ] **`appSettings.fridges` vs `locations.shelfCount`** — two layout configs. Nothing reads `appSettings.fridges` in the count flow; migrate the Settings UI to edit `locations` and drop `FridgeConfig`.
+- [ ] **Stale tray docs beyond `trayCount`** — ignored by totals but never deleted (staff can't delete tray docs). An admin cleanup or a rules change to allow the counter to delete slot docs > `trayCount` would tidy this.
+- [ ] **Learning samples from the tray label** — `learningData` stores only the count; store the AI's label transcription vs. the user's correction to measure OCR accuracy too.

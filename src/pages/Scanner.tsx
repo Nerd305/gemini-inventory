@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
-import { collection, query, where, getDocs, addDoc, updateDoc, doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { setDoc, collection, query, where, getDocs, addDoc, updateDoc, doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/ui/button';
@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Loader2, MapPin, Package, Search, Printer, ArrowRight, PlusCircle, CheckCircle2, Camera, StopCircle, Upload, AlertTriangle } from 'lucide-react';
 import { LabelPrinter } from '../components/LabelPrinter';
 import { countVialsInTray } from '../lib/ai';
+import { basketQrCode } from '../lib/inventory';
 import { pushInventoryUpdate } from '../lib/apibridge';
 import { saveLearningRecord } from '../lib/learning';
 
@@ -221,8 +222,10 @@ export default function Scanner() {
     if (!selectedProductId || !selectedLocationId || !basketName) return;
     setLoading(true);
     try {
-      const code = `CONT:${Date.now()}`;
-      await addDoc(collection(db, 'baskets'), {
+      // BSKT:<docId> is the label format the /count flow scans (legacy CONT: codes still resolve below).
+      const basketRef = doc(collection(db, 'baskets'));
+      const code = basketQrCode(basketRef.id);
+      await setDoc(basketRef, {
         productId: selectedProductId,
         locationId: selectedLocationId,
         name: basketName,
@@ -230,7 +233,8 @@ export default function Scanner() {
         vialsPerTray: basketVialsPerTray,
         looseVials: basketLooseVials,
         qrCode: code,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       });
       const prod = products.find(p => p.id === selectedProductId);
       const totalVials = (basketTrayCount * basketVialsPerTray) + basketLooseVials;
@@ -278,11 +282,18 @@ export default function Scanner() {
           playError();
           alert('Product not found');
         }
-      } else if (decodedText.startsWith('CONT:')) {
-        const q = query(collection(db, 'baskets'), where('qrCode', '==', decodedText));
-        const snap = await getDocs(q);
-        if (!snap.empty) {
-          const containerDoc = snap.docs[0];
+      } else if (decodedText.startsWith('CONT:') || decodedText.startsWith('BSKT:')) {
+        // BSKT: codes encode the basket doc ID; legacy CONT: codes are looked up by the qrCode field.
+        let containerDoc: { id: string; data: () => any } | null = null;
+        if (decodedText.startsWith('BSKT:')) {
+          const snap = await getDoc(doc(db, 'baskets', decodedText.slice(5).trim()));
+          if (snap.exists()) containerDoc = { id: snap.id, data: () => snap.data() };
+        } else {
+          const q = query(collection(db, 'baskets'), where('qrCode', '==', decodedText));
+          const snap = await getDocs(q);
+          if (!snap.empty) containerDoc = { id: snap.docs[0].id, data: () => snap.docs[0].data() };
+        }
+        if (containerDoc) {
           const container = containerDoc.data();
           
           if (taskType === 'REASSIGN') {
@@ -310,7 +321,7 @@ export default function Scanner() {
         }
       } else {
         playError();
-        alert('Unrecognized Code Format. Expected LOC:, PRODUCT:, or CONT:');
+        alert('Unrecognized Code Format. Expected LOC:, PRODUCT:, BSKT:, or CONT:');
       }
     } catch (error) {
       console.error(error);

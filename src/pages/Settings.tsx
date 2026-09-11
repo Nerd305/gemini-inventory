@@ -340,6 +340,16 @@ export default function Settings() {
         <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
       </div>
 
+      {/* Pages that don't fit in the phone bottom bar. */}
+      <Card className="sm:hidden">
+        <CardContent className="p-3 grid grid-cols-2 gap-2">
+          <a href="/locations" className="rounded-md border px-3 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50">Locations & shelves</a>
+          <a href="/reports" className="rounded-md border px-3 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50">Reports</a>
+          <a href="/print-station" className="rounded-md border px-3 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50">Print Station</a>
+          <a href="/scan" className="rounded-md border px-3 py-2 text-sm font-medium text-gray-500 hover:bg-gray-50">Legacy scanner</a>
+        </CardContent>
+      </Card>
+
       {isAdmin && (
         <Card>
           <CardHeader>
@@ -494,8 +504,8 @@ export default function Settings() {
               <HelpTooltip content="Define the physical layout of your storage. This structure directly dictates how the Guided Counting sessions step through shelves and baskets." />
             </CardTitle>
             <CardDescription>
-              Define the fridges available in this facility and their layout. These settings power the
-              counting flow's shelf and basket-slot navigation.
+              Legacy layout config. Shelf QR labels are printed from <a href="/locations" className="underline">Locations</a>{' '}
+              (set a shelf count on each fridge) and bins are managed under <a href="/bins" className="underline">Bins</a>.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">

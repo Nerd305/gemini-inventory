@@ -18,6 +18,7 @@ import Reports from './pages/Reports';
 import PrintStation from './pages/PrintStation';
 import Settings from './pages/Settings';
 import CountSession from './pages/CountSession';
+import Bins from './pages/Bins';
 import Layout from './components/Layout';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -75,6 +76,7 @@ export default function App() {
           <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
             <Route index element={<Dashboard />} />
             <Route path="scan" element={<Scanner />} />
+            <Route path="bins" element={<Bins />} />
             <Route path="products" element={<Products />} />
             <Route path="locations" element={<Locations />} />
             <Route path="reports" element={<Reports />} />

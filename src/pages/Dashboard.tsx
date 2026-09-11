@@ -1,13 +1,14 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useMemo } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import { collection, query, onSnapshot, orderBy, limit, where } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
-import { AlertTriangle, Activity, Loader2, ScanLine, RefreshCcw } from 'lucide-react';
-import { format } from 'date-fns';
-import { LiveSessionCard } from '../components/counting/LiveSessionCard';
+import { AlertTriangle, Activity, Loader2, ScanLine, RefreshCcw, ClipboardCheck, Boxes } from 'lucide-react';
+import { format, formatDistanceToNow } from 'date-fns';
+import { LiveSessionCard, type CountingSessionData } from '../components/counting/LiveSessionCard';
 import { HelpTooltip } from '../components/HelpTooltip';
+import { basketTotal, type BasketDoc } from '../lib/inventory';
 
 interface Product {
   id: string;
@@ -26,17 +27,12 @@ interface Log {
   productName?: string;
 }
 
-interface CountingSession {
+interface BinRecord extends BasketDoc {
   id: string;
-  userName: string;
-  status: string;
-  progress: {
-    basketsCounted: number;
-    totalVials: number;
-  };
-  startedAt: string;
-  locationId: string;
 }
+
+const LIVE_SESSION_WINDOW_MS = 24 * 60 * 60 * 1000;
+const STALE_DAYS = 7;
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -44,60 +40,116 @@ export default function Dashboard() {
   const [recentLogs, setRecentLogs] = useState<Log[]>([]);
   const [loading, setLoading] = useState(true);
   const [productsMap, setProductsMap] = useState<Record<string, string>>({});
-  const [activeSessions, setActiveSessions] = useState<CountingSession[]>([]);
+  const [activeSessions, setActiveSessions] = useState<CountingSessionData[]>([]);
+  const [bins, setBins] = useState<BinRecord[]>([]);
 
   useEffect(() => {
     // Listen to all products to build map and find low stock
     const qProducts = query(collection(db, 'products'));
-    const unsubProducts = onSnapshot(qProducts, (snapshot) => {
-      const prods: Product[] = [];
-      const pMap: Record<string, string> = {};
-      
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        pMap[doc.id] = data.name;
-        if (data.currentStock <= data.reorderPoint) {
-          prods.push({ id: doc.id, ...data } as Product);
-        }
-      });
-      
-      setProductsMap(pMap);
-      setLowStockProducts(prods);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'products');
-    });
+    const unsubProducts = onSnapshot(
+      qProducts,
+      (snapshot) => {
+        const prods: Product[] = [];
+        const pMap: Record<string, string> = {};
+
+        snapshot.forEach((d) => {
+          const data = d.data();
+          pMap[d.id] = data.name;
+          if (data.currentStock <= data.reorderPoint) {
+            prods.push({ id: d.id, ...data } as Product);
+          }
+        });
+
+        setProductsMap(pMap);
+        setLowStockProducts(prods);
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'products');
+      },
+    );
 
     // Listen to recent logs
     const qLogs = query(collection(db, 'inventoryLogs'), orderBy('timestamp', 'desc'), limit(10));
-    const unsubLogs = onSnapshot(qLogs, (snapshot) => {
-      const logs: Log[] = [];
-      snapshot.forEach((doc) => {
-        logs.push({ id: doc.id, ...doc.data() } as Log);
-      });
-      setRecentLogs(logs);
-      setLoading(false);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'inventoryLogs');
-    });
+    const unsubLogs = onSnapshot(
+      qLogs,
+      (snapshot) => {
+        const logs: Log[] = [];
+        snapshot.forEach((d) => {
+          logs.push({ id: d.id, ...d.data() } as Log);
+        });
+        setRecentLogs(logs);
+        setLoading(false);
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'inventoryLogs');
+      },
+    );
 
-    // Listen to active counting sessions
+    // Listen to active counting sessions (only ones started in the last 24h — older paused
+    // sessions can't be resumed and would sit here forever).
     const qSessions = query(collection(db, 'countingSessions'), where('status', 'in', ['active', 'paused']));
-    const unsubSessions = onSnapshot(qSessions, (snapshot) => {
-      const sessions: CountingSession[] = [];
-      snapshot.forEach((doc) => {
-        sessions.push({ id: doc.id, ...doc.data() } as CountingSession);
-      });
-      setActiveSessions(sessions);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'countingSessions');
-    });
+    const unsubSessions = onSnapshot(
+      qSessions,
+      (snapshot) => {
+        const cutoff = Date.now() - LIVE_SESSION_WINDOW_MS;
+        const sessions: CountingSessionData[] = [];
+        snapshot.forEach((d) => {
+          const s = { id: d.id, ...d.data() } as CountingSessionData;
+          const started = Date.parse(s.startedAt);
+          if (Number.isFinite(started) && started < cutoff) return;
+          sessions.push(s);
+        });
+        sessions.sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt));
+        setActiveSessions(sessions);
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'countingSessions');
+      },
+    );
+
+    // Bins → count coverage
+    const unsubBins = onSnapshot(
+      query(collection(db, 'baskets')),
+      (snapshot) => {
+        const next: BinRecord[] = [];
+        snapshot.forEach((d) => next.push({ id: d.id, ...(d.data() as BasketDoc) }));
+        setBins(next);
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'baskets');
+      },
+    );
 
     return () => {
       unsubProducts();
       unsubLogs();
       unsubSessions();
+      unsubBins();
     };
   }, []);
+
+  const coverage = useMemo(() => {
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const staleCutoff = now.getTime() - STALE_DAYS * 86_400_000;
+    let countedToday = 0;
+    let vialsOnHand = 0;
+    const stale: BinRecord[] = [];
+    for (const b of bins) {
+      vialsOnHand += basketTotal(b);
+      const t = b.lastCountedAt ? Date.parse(b.lastCountedAt) : NaN;
+      if (Number.isFinite(t) && t >= startOfToday) countedToday++;
+      if (!Number.isFinite(t) || t < staleCutoff) stale.push(b);
+    }
+    stale.sort((a, b) => {
+      const ta = a.lastCountedAt ? Date.parse(a.lastCountedAt) : 0;
+      const tb = b.lastCountedAt ? Date.parse(b.lastCountedAt) : 0;
+      return ta - tb;
+    });
+    return { total: bins.length, countedToday, vialsOnHand, stale };
+  }, [bins]);
+
+  const coveragePct = coverage.total === 0 ? 0 : Math.round((100 * coverage.countedToday) / coverage.total);
 
   return (
     <div className="space-y-6">
@@ -108,7 +160,7 @@ export default function Dashboard() {
           <span className="font-medium">API Sync: Active</span>
         </div>
       </div>
-      
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {activeSessions.length > 0 && (
           <div className="md:col-span-2">
@@ -117,13 +169,83 @@ export default function Dashboard() {
               Live Counting Sessions
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {activeSessions.map(session => (
+              {activeSessions.map((session) => (
                 <LiveSessionCard key={session.id} session={session} />
               ))}
             </div>
           </div>
         )}
-        
+
+        {/* Count coverage */}
+        <Card className="border-teal-200 md:col-span-2">
+          <CardHeader className="bg-teal-50 border-b border-teal-100 pb-4">
+            <CardTitle className="flex items-center text-teal-800">
+              <ClipboardCheck className="h-5 w-5 mr-2" />
+              Today's Count
+              <HelpTooltip content="How many bins have been finished in a counting session today, and which bins haven't been counted in over a week." />
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-4 sm:p-6">
+            {coverage.total === 0 ? (
+              <div className="text-center text-gray-500 text-sm">
+                No bins set up yet.{' '}
+                <Link to="/bins" className="text-teal-700 underline">
+                  Add bins
+                </Link>{' '}
+                for each basket in the fridge to track counts per bin.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-2">
+                  <div className="flex items-end justify-between mb-2">
+                    <div>
+                      <p className="text-3xl font-bold text-gray-900 tabular-nums">
+                        {coverage.countedToday}
+                        <span className="text-lg font-medium text-gray-400"> / {coverage.total} bins</span>
+                      </p>
+                      <p className="text-sm text-gray-500">counted today</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-2xl font-bold text-teal-700 tabular-nums">{coverage.vialsOnHand.toLocaleString()}</p>
+                      <p className="text-sm text-gray-500">vials on hand</p>
+                    </div>
+                  </div>
+                  <div className="h-3 rounded-full bg-gray-100 overflow-hidden">
+                    <div className="h-full bg-teal-500 transition-all" style={{ width: `${coveragePct}%` }} />
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1">{coveragePct}% of bins finished today</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1.5 flex items-center">
+                    <Boxes className="h-3.5 w-3.5 mr-1" /> Needs a count ({coverage.stale.length})
+                  </p>
+                  {coverage.stale.length === 0 ? (
+                    <p className="text-sm text-green-700">Every bin was counted in the last {STALE_DAYS} days.</p>
+                  ) : (
+                    <ul className="space-y-1">
+                      {coverage.stale.slice(0, 5).map((b) => (
+                        <li key={b.id} className="text-sm flex justify-between gap-2">
+                          <span className="truncate text-gray-800">{b.name || productsMap[b.productId] || b.id}</span>
+                          <span className="text-xs text-amber-600 shrink-0">
+                            {b.lastCountedAt ? `${formatDistanceToNow(new Date(b.lastCountedAt))} ago` : 'never'}
+                          </span>
+                        </li>
+                      ))}
+                      {coverage.stale.length > 5 && (
+                        <li className="text-xs text-gray-500">
+                          <Link to="/bins" className="underline">
+                            +{coverage.stale.length - 5} more under Bins
+                          </Link>
+                        </li>
+                      )}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         {/* Low Stock Alerts */}
         <Card className="border-red-200">
           <CardHeader className="bg-red-50 border-b border-red-100 pb-4">
@@ -135,7 +257,9 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent className="p-0">
             {loading ? (
-              <div className="p-6 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-red-500" /></div>
+              <div className="p-6 flex justify-center">
+                <Loader2 className="h-6 w-6 animate-spin text-red-500" />
+              </div>
             ) : lowStockProducts.length === 0 ? (
               <div className="p-6 text-center text-gray-500">All products are adequately stocked.</div>
             ) : (
@@ -147,7 +271,7 @@ export default function Dashboard() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {lowStockProducts.map(product => (
+                  {lowStockProducts.map((product) => (
                     <TableRow key={product.id}>
                       <TableCell className="font-medium">{product.name}</TableCell>
                       <TableCell className="text-right text-red-600 font-bold">
@@ -172,7 +296,9 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent className="p-0">
             {loading ? (
-              <div className="p-6 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-gray-500" /></div>
+              <div className="p-6 flex justify-center">
+                <Loader2 className="h-6 w-6 animate-spin text-gray-500" />
+              </div>
             ) : recentLogs.length === 0 ? (
               <div className="p-6 text-center text-gray-500">No recent activity.</div>
             ) : (
@@ -185,21 +311,25 @@ export default function Dashboard() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {recentLogs.map(log => (
+                  {recentLogs.map((log) => (
                     <TableRow key={log.id}>
                       <TableCell>
-                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                          log.action === 'ADD' ? 'bg-green-100 text-green-800' : 
-                          log.action === 'REMOVE' ? 'bg-red-100 text-red-800' : 
-                          'bg-blue-100 text-blue-800'
-                        }`}>
+                        <span
+                          className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                            log.action === 'ADD'
+                              ? 'bg-green-100 text-green-800'
+                              : log.action === 'REMOVE'
+                              ? 'bg-red-100 text-red-800'
+                              : log.action === 'COUNT'
+                              ? 'bg-teal-100 text-teal-800'
+                              : 'bg-blue-100 text-blue-800'
+                          }`}
+                        >
                           {log.action} {log.amount}
                         </span>
                       </TableCell>
                       <TableCell className="font-medium">{productsMap[log.productId] || 'Unknown'}</TableCell>
-                      <TableCell className="text-sm text-gray-500">
-                        {format(new Date(log.timestamp), 'MMM d, h:mm a')}
-                      </TableCell>
+                      <TableCell className="text-sm text-gray-500">{format(new Date(log.timestamp), 'MMM d, h:mm a')}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

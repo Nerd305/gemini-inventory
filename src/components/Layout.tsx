@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from './ui/button';
-import { LayoutDashboard, ScanLine, Package, MapPin, BarChart3, LogOut, Printer, Wifi, Settings as SettingsIcon } from 'lucide-react';
+import { LayoutDashboard, ScanLine, Package, MapPin, BarChart3, LogOut, Printer, Wifi, Settings as SettingsIcon, Boxes } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { APP_VERSION } from '../lib/version';
 import { collection, getDocs, query, limit } from 'firebase/firestore';
@@ -27,15 +27,18 @@ export default function Layout() {
     }
   };
 
+  // `mobile` picks the items that fit a phone's bottom bar; the desktop sidebar shows everything.
   const navItems = [
-    { name: 'Dashboard', shortName: 'Home', path: '/', icon: LayoutDashboard },
-    { name: 'Scan', shortName: 'Scan', path: '/scan', icon: ScanLine },
-    { name: 'Products', shortName: 'Items', path: '/products', icon: Package },
-    { name: 'Locations', shortName: 'Places', path: '/locations', icon: MapPin },
-    { name: 'Reports', shortName: 'Stats', path: '/reports', icon: BarChart3 },
-    { name: 'Print Station', shortName: 'Print', path: '/print-station', icon: Printer },
-    { name: 'Settings', shortName: 'More', path: '/settings', icon: SettingsIcon },
+    { name: 'Dashboard', shortName: 'Home', path: '/', icon: LayoutDashboard, mobile: true },
+    { name: 'Start Count', shortName: 'Count', path: '/count', icon: ScanLine, mobile: true },
+    { name: 'Bins', shortName: 'Bins', path: '/bins', icon: Boxes, mobile: true },
+    { name: 'Products', shortName: 'Items', path: '/products', icon: Package, mobile: true },
+    { name: 'Locations', shortName: 'Places', path: '/locations', icon: MapPin, mobile: false },
+    { name: 'Reports', shortName: 'Stats', path: '/reports', icon: BarChart3, mobile: false },
+    { name: 'Print Station', shortName: 'Print', path: '/print-station', icon: Printer, mobile: false },
+    { name: 'Settings', shortName: 'More', path: '/settings', icon: SettingsIcon, mobile: true },
   ];
+  const mobileNavItems = navItems.filter((item) => item.mobile);
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -66,7 +69,7 @@ export default function Layout() {
 
       {/* Mobile Navigation */}
       <nav className="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t flex justify-around px-1 pt-2 pb-safe z-10">
-        {navItems.map((item) => {
+        {mobileNavItems.map((item) => {
           const Icon = item.icon;
           const isActive = location.pathname === item.path;
           return (
