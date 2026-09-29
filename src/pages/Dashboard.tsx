@@ -4,11 +4,12 @@ import { collection, query, onSnapshot, orderBy, limit, where } from 'firebase/f
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
-import { AlertTriangle, Activity, Loader2, ScanLine, RefreshCcw, ClipboardCheck, Boxes } from 'lucide-react';
+import { AlertTriangle, Activity, Loader2, ScanLine, RefreshCcw, ClipboardCheck, Boxes, ListChecks } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { LiveSessionCard, type CountingSessionData } from '../components/counting/LiveSessionCard';
 import { HelpTooltip } from '../components/HelpTooltip';
 import { basketTotal, type BasketDoc } from '../lib/inventory';
+import SetupGuide, { readSetupGuideStore, writeSetupGuideStore } from '../components/SetupGuide';
 
 interface Product {
   id: string;
@@ -42,6 +43,13 @@ export default function Dashboard() {
   const [productsMap, setProductsMap] = useState<Record<string, string>>({});
   const [activeSessions, setActiveSessions] = useState<CountingSessionData[]>([]);
   const [bins, setBins] = useState<BinRecord[]>([]);
+  const [productCount, setProductCount] = useState(0);
+  const [guideHidden, setGuideHidden] = useState<boolean>(() => Boolean(readSetupGuideStore().hidden));
+
+  const setGuideVisibility = (hidden: boolean) => {
+    setGuideHidden(hidden);
+    writeSetupGuideStore({ ...readSetupGuideStore(), hidden });
+  };
 
   useEffect(() => {
     // Listen to all products to build map and find low stock
@@ -61,6 +69,7 @@ export default function Dashboard() {
         });
 
         setProductsMap(pMap);
+        setProductCount(snapshot.size);
         setLowStockProducts(prods);
       },
       (error) => {
@@ -155,13 +164,29 @@ export default function Dashboard() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-        <div className="flex items-center text-sm px-3 py-1.5 bg-green-50 text-green-700 rounded-full border border-green-200 shadow-sm">
-          <RefreshCcw className="h-3.5 w-3.5 mr-2" />
-          <span className="font-medium">API Sync: Active</span>
+        <div className="flex items-center gap-2">
+          {guideHidden && (
+            <button
+              type="button"
+              onClick={() => setGuideVisibility(false)}
+              className="flex items-center text-xs px-2.5 py-1.5 text-blue-700 bg-blue-50 rounded-full border border-blue-200 hover:bg-blue-100"
+              title="Show the setup checklist"
+            >
+              <ListChecks className="h-3.5 w-3.5 mr-1.5" /> Setup guide
+            </button>
+          )}
+          <div className="flex items-center text-sm px-3 py-1.5 bg-green-50 text-green-700 rounded-full border border-green-200 shadow-sm">
+            <RefreshCcw className="h-3.5 w-3.5 mr-2" />
+            <span className="font-medium">API Sync: Active</span>
+          </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {!guideHidden && (
+          <SetupGuide bins={bins} productCount={productCount} ready={!loading} onHide={() => setGuideVisibility(true)} />
+        )}
+
         {activeSessions.length > 0 && (
           <div className="md:col-span-2">
             <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">

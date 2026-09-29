@@ -24,6 +24,7 @@ import { Card, CardContent } from '../components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { LabelPrinter } from '../components/LabelPrinter';
 import { HelpTooltip } from '../components/HelpTooltip';
+import { NextStepHint } from '../components/NextStepHint';
 import {
   basketQrCode,
   basketTotal,
@@ -363,6 +364,17 @@ export default function Bins() {
           <Plus className="h-4 w-4 mr-2" /> Add Bin
         </Button>
       </div>
+
+      {!loading && locations.length === 0 && (
+        <NextStepHint to="/locations" cta="Add a fridge">
+          Bins live on a fridge shelf. Add your fridge under Locations first (with its shelf count) so bins can be assigned to a shelf.
+        </NextStepHint>
+      )}
+      {!loading && bins.length > 0 && bins.some((b) => !b.lastCountedAt) && (
+        <NextStepHint to="/count" cta="Start Count">
+          Next: tap a bin and print its <strong>Bin label</strong> into the tag sleeve, then run a count. Scan the shelf, scan the bin, tap each tray.
+        </NextStepHint>
+      )}
 
       <div className="flex flex-col sm:flex-row gap-3 bg-white p-4 rounded-lg border shadow-sm">
         <div className="flex-1 space-y-1">

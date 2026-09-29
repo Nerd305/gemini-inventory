@@ -61,7 +61,7 @@ Routes are declared in [src/App.tsx](src/App.tsx). `/count` is full-screen (outs
 
 - **/bins** ([src/pages/Bins.tsx](src/pages/Bins.tsx)) — create/edit bins (product, fridge, shelf, trays, vials/tray, loose), grouped fridge → shelf, last-counted staleness, bin detail with per-tray counts and lot/BUD, bin QR label and batch tray labels.
 - **/locations** — fridges/cabinets with `shelfCount`; "Shelf labels" prints/batches `SHELF:` codes.
-- **/** (Dashboard) — "Today's Count" coverage card (bins finished today, vials on hand, bins not counted in 7 days) plus live sessions from the last 24h.
+- **/** (Dashboard) — [SetupGuide](src/components/SetupGuide.tsx) checklist (fridges → shelf labels → products → bins → bin labels → first count → Complete & Sync; detected from Firestore, label steps can be ticked by hand, hides itself when done or dismissed via localStorage), the "Today's Count" coverage card (bins finished today, vials on hand, bins not counted in 7 days) and live sessions from the last 24h. Setup pages show a one-line [NextStepHint](src/components/NextStepHint.tsx) pointing at the next stage; `/count` tells first-time users to set up bins when none exist.
 
 ## Web server / webhook backend ([server.js](server.js))
 

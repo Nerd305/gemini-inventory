@@ -17,6 +17,7 @@ import {
 import { Plus, Loader2, Printer, Pencil, Trash2, MapPin, Layers, Send } from 'lucide-react';
 import { LabelPrinter } from '../components/LabelPrinter';
 import { HelpTooltip } from '../components/HelpTooltip';
+import { NextStepHint } from '../components/NextStepHint';
 import { clampInt, shelfQrCode, type LocationDoc } from '../lib/inventory';
 import { LABEL_FORMAT_OPTIONS, sendPrintJobs } from '../lib/printing';
 import type { LabelFormat } from '../shared/types';
@@ -244,6 +245,18 @@ export default function Locations() {
           </DialogContent>
         </Dialog>
       </div>
+
+      {!loading && locations.length > 0 && (
+        locations.every((l) => clampInt(l.shelfCount) === 0) ? (
+          <NextStepHint>
+            Next: open each fridge and set its shelf count, then use <strong>Shelf labels</strong> to print one QR per shelf.
+          </NextStepHint>
+        ) : (
+          <NextStepHint to="/bins" cta="Set up bins">
+            Next: print each fridge's <strong>Shelf labels</strong> and stick them on the shelf edges, then add a bin for every basket.
+          </NextStepHint>
+        )
+      )}
 
       {loading ? (
         <div className="flex justify-center p-8">
