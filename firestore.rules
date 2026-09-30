@@ -71,7 +71,34 @@ service cloud.firestore {
              (!request.resource.data.keys().hasAny(['lastCountedAt']) || request.resource.data.lastCountedAt is string) &&
              (!request.resource.data.keys().hasAny(['lastCountedBy']) || request.resource.data.lastCountedBy is string) &&
              (!request.resource.data.keys().hasAny(['totalVials']) || (request.resource.data.totalVials is number && request.resource.data.totalVials >= 0)) &&
+             (!request.resource.data.keys().hasAny(['migratedTraysAt']) || request.resource.data.migratedTraysAt is string) &&
              (!request.resource.data.keys().hasAny(['updatedAt']) || request.resource.data.updatedAt is string);
+    }
+
+    // trays/{trayId}: one doc per physical tray; basketId points at the bin it sits in.
+    function isValidTrayRecord() {
+      return hasRequiredFields(['basketId', 'productId', 'slot', 'count', 'capacity', 'status', 'createdAt']) &&
+             request.resource.data.basketId is string &&
+             request.resource.data.productId is string &&
+             request.resource.data.slot is number && request.resource.data.slot >= 1 &&
+             request.resource.data.count is number && request.resource.data.count >= 0 &&
+             request.resource.data.capacity is number && request.resource.data.capacity > 0 &&
+             request.resource.data.status in ['active', 'removed'] &&
+             request.resource.data.createdAt is string &&
+             (!request.resource.data.keys().hasAny(['countedAt']) || request.resource.data.countedAt is string) &&
+             (!request.resource.data.keys().hasAny(['countedBy']) || request.resource.data.countedBy is string) &&
+             (!request.resource.data.keys().hasAny(['sessionId']) || request.resource.data.sessionId is string) &&
+             (!request.resource.data.keys().hasAny(['aiPrediction']) || request.resource.data.aiPrediction is number) &&
+             (!request.resource.data.keys().hasAny(['lotNumber']) || request.resource.data.lotNumber is string) &&
+             (!request.resource.data.keys().hasAny(['bud']) || request.resource.data.bud is string) &&
+             (!request.resource.data.keys().hasAny(['dateCompounded']) || request.resource.data.dateCompounded is string) &&
+             (!request.resource.data.keys().hasAny(['labelText']) || request.resource.data.labelText is string) &&
+             (!request.resource.data.keys().hasAny(['updatedAt']) || request.resource.data.updatedAt is string) &&
+             (!request.resource.data.keys().hasAny(['createdBy']) || request.resource.data.createdBy is string) &&
+             (!request.resource.data.keys().hasAny(['removedAt']) || request.resource.data.removedAt is string) &&
+             (!request.resource.data.keys().hasAny(['removedBy']) || request.resource.data.removedBy is string) &&
+             (!request.resource.data.keys().hasAny(['movedAt']) || request.resource.data.movedAt is string) &&
+             (!request.resource.data.keys().hasAny(['movedBy']) || request.resource.data.movedBy is string);
     }
 
     // Tray docs live at baskets/{basketId}/trays/slot-N. Written with merge:true, so the
@@ -193,7 +220,15 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // Trays live as a subcollection beneath each basket (one doc per tray slot).
+    // Physical trays. Queried by basketId (bin view), productId (FIFO) and status (dashboard).
+    match /trays/{trayId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isStaffOrAdmin() && isValidTrayRecord();
+      allow delete: if isAdmin();
+    }
+
+    // LEGACY (pre tray-identity): trays as a subcollection beneath each basket. Read-only in
+    // practice — migrateLegacyTrays() copies these into /trays the first time a bin is opened.
     match /baskets/{basketId}/trays/{trayId} {
       allow read: if isAuthenticated();
       allow create, update: if isStaffOrAdmin() && isValidTray();

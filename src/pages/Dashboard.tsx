@@ -4,11 +4,12 @@ import { collection, query, onSnapshot, orderBy, limit, where } from 'firebase/f
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
-import { AlertTriangle, Activity, Loader2, ScanLine, RefreshCcw, ClipboardCheck, Boxes, ListChecks } from 'lucide-react';
+import { AlertTriangle, Activity, Loader2, ScanLine, RefreshCcw, ClipboardCheck, Boxes, ListChecks, Star } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { LiveSessionCard, type CountingSessionData } from '../components/counting/LiveSessionCard';
 import { HelpTooltip } from '../components/HelpTooltip';
-import { basketTotal, type BasketDoc } from '../lib/inventory';
+import { activeTraysQuery, basketTotal, budStatus, daysUntilBud, describeShelf, fifoOrder, formatBud, trayRecordFromSnapshot, type BasketDoc, type TrayRecord } from '../lib/inventory';
+import { useLocations } from '../hooks/useLocations';
 import SetupGuide, { readSetupGuideStore, writeSetupGuideStore } from '../components/SetupGuide';
 
 interface Product {
@@ -43,6 +44,8 @@ export default function Dashboard() {
   const [productsMap, setProductsMap] = useState<Record<string, string>>({});
   const [activeSessions, setActiveSessions] = useState<CountingSessionData[]>([]);
   const [bins, setBins] = useState<BinRecord[]>([]);
+  const [trays, setTrays] = useState<TrayRecord[]>([]);
+  const { nameOf } = useLocations();
   const [productCount, setProductCount] = useState(0);
   const [guideHidden, setGuideHidden] = useState<boolean>(() => Boolean(readSetupGuideStore().hidden));
 
@@ -129,11 +132,28 @@ export default function Dashboard() {
       },
     );
 
+    // Active trays → FIFO / expiring card
+    const unsubTrays = onSnapshot(
+      activeTraysQuery(),
+      (snapshot) => {
+        const next: TrayRecord[] = [];
+        snapshot.forEach((d) => {
+          const t = trayRecordFromSnapshot(d.id, d.data());
+          if (t) next.push(t);
+        });
+        setTrays(next);
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'trays');
+      },
+    );
+
     return () => {
       unsubProducts();
       unsubLogs();
       unsubSessions();
       unsubBins();
+      unsubTrays();
     };
   }, []);
 
@@ -159,6 +179,21 @@ export default function Dashboard() {
   }, [bins]);
 
   const coveragePct = coverage.total === 0 ? 0 : Math.round((100 * coverage.countedToday) / coverage.total);
+
+  // Trays with a BUD, soonest first: expired, then within 60 days.
+  const fifo = useMemo(() => {
+    const ordered = fifoOrder(trays).filter((t) => /^\d{4}-\d{2}-\d{2}$/.test(t.bud ?? ''));
+    const upcoming = ordered.filter((t) => {
+      const d = daysUntilBud(t.bud);
+      return d !== null && d <= 60;
+    });
+    return { dated: ordered.length, upcoming, expired: ordered.filter((t) => budStatus(t.bud) === 'expired').length };
+  }, [trays]);
+  const binById = useMemo(() => {
+    const m: Record<string, BinRecord> = {};
+    for (const b of bins) m[b.id] = b;
+    return m;
+  }, [bins]);
 
   return (
     <div className="space-y-6">
@@ -267,6 +302,65 @@ export default function Dashboard() {
                   )}
                 </div>
               </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* FIFO: which trays to use first / expiring BUDs */}
+        <Card className="border-amber-200 md:col-span-2">
+          <CardHeader className="bg-amber-50 border-b border-amber-100 pb-4">
+            <CardTitle className="flex items-center text-amber-900">
+              <Star className="h-5 w-5 mr-2" />
+              Use First · Expiring BUDs
+              <HelpTooltip content="Trays whose beyond-use date is past or within 60 days, earliest first, across every bin. Pull from these before anything else. BUDs come from the tray label (AI-read during a count, or entered under Bins)." />
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            {fifo.dated === 0 ? (
+              <div className="p-6 text-center text-gray-500 text-sm">
+                No tray BUDs recorded yet. Photograph the tray label during a count (AI count) or add lot / BUD to each tray under{' '}
+                <Link to="/bins" className="text-teal-700 underline">Bins</Link>.
+              </div>
+            ) : fifo.upcoming.length === 0 ? (
+              <div className="p-6 text-center text-green-700 text-sm">Nothing expires in the next 60 days across {fifo.dated} dated trays.</div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Product · bin</TableHead>
+                    <TableHead>Lot</TableHead>
+                    <TableHead className="text-right">BUD</TableHead>
+                    <TableHead className="text-right">Vials</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {fifo.upcoming.slice(0, 8).map((t) => {
+                    const bin = binById[t.basketId];
+                    const days = daysUntilBud(t.bud);
+                    const status = budStatus(t.bud);
+                    return (
+                      <TableRow key={t.id}>
+                        <TableCell>
+                          <p className="font-medium text-gray-900">{productsMap[t.productId] || bin?.name || 'Product'}</p>
+                          <p className="text-xs text-gray-500">
+                            {bin?.name ? `${bin.name} · ` : ''}Tray {t.slot}
+                            {bin?.shelfId ? ` · ${describeShelf(bin.shelfId, nameOf)}` : ''}
+                          </p>
+                        </TableCell>
+                        <TableCell className="text-sm text-gray-700">{t.lotNumber || '—'}</TableCell>
+                        <TableCell className={`text-right text-sm font-semibold ${status === 'expired' ? 'text-red-600' : 'text-amber-700'}`}>
+                          {formatBud(t.bud)}
+                          <span className="block text-[11px] font-normal">{days !== null && days < 0 ? `expired ${-days}d ago` : `${days}d left`}</span>
+                        </TableCell>
+                        <TableCell className="text-right font-bold tabular-nums">{t.countedAt ? t.count : '—'}</TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            )}
+            {fifo.upcoming.length > 8 && (
+              <p className="px-4 py-2 text-xs text-gray-500">+{fifo.upcoming.length - 8} more · see each product under Products or Bins.</p>
             )}
           </CardContent>
         </Card>

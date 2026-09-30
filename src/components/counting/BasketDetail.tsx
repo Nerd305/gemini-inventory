@@ -1,19 +1,25 @@
 import { useEffect, useMemo, useState } from 'react';
 import { doc, updateDoc } from 'firebase/firestore';
-import { Loader2, Sparkles, Wand2, Pencil, Minus, Plus, CheckCircle2 } from 'lucide-react';
+import { Loader2, Sparkles, Wand2, Pencil, Minus, Plus, CheckCircle2, Star } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { db, handleFirestoreError, OperationType } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCountingSession } from '../../contexts/CountingSessionContext';
 import { Button } from '../ui/button';
 import {
+  activeTrays,
   budStatus,
   clampInt,
-  countedSlots,
+  countedInSession,
+  createTrays,
+  hasBeenCounted,
   liveBasketTotal,
+  MAX_TRAYS_PER_BIN,
   setAllTraysFull,
+  traysCountedInSession,
   updateBasket,
-  type TrayMap,
+  useFirstTrayId,
+  type TrayRecord,
 } from '../../lib/inventory';
 
 export interface BasketSummary {
@@ -27,19 +33,20 @@ export interface BasketSummary {
   shelfId: string | null;
   totalVials?: number;
   lastCountedAt?: string;
+  migratedTraysAt?: string;
 }
 
 interface BasketDetailProps {
   basket: BasketSummary;
-  trays: TrayMap;
+  trays: TrayRecord[];
+  traysLoaded: boolean;
   finishing: boolean;
-  onSelectSlot: (slot: number) => void;
+  onSelectTray: (trayId: string) => void;
+  onTrayAdded: (trayId: string) => void;
   onStartAiSequence: () => void;
   onAllFull: () => void;
   onFinish: () => void;
 }
-
-const MAX_TRAYS = 40;
 
 function Stepper({
   label,
@@ -85,8 +92,10 @@ function Stepper({
 export default function BasketDetail({
   basket,
   trays,
+  traysLoaded,
   finishing,
-  onSelectSlot,
+  onSelectTray,
+  onTrayAdded,
   onStartAiSequence,
   onAllFull,
   onFinish,
@@ -98,6 +107,7 @@ export default function BasketDetail({
   const [savingName, setSavingName] = useState(false);
   const [bulkSaving, setBulkSaving] = useState(false);
   const [savingLayout, setSavingLayout] = useState(false);
+  const [addingTray, setAddingTray] = useState(false);
 
   useEffect(() => {
     if (!editingName) setNameDraft(basket.productName);
@@ -123,10 +133,10 @@ export default function BasketDetail({
     }
   };
 
-  const setLayout = async (patch: { trayCount?: number; looseVials?: number }) => {
+  const setLoose = async (looseVials: number) => {
     setSavingLayout(true);
     try {
-      await updateBasket(basket.id, patch);
+      await updateBasket(basket.id, { looseVials });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `baskets/${basket.id}`);
     } finally {
@@ -134,32 +144,46 @@ export default function BasketDetail({
     }
   };
 
+  const handleAddTray = async () => {
+    if (!user) return;
+    setAddingTray(true);
+    try {
+      const [id] = await createTrays({
+        basketId: basket.id,
+        productId: basket.productId,
+        capacity: basket.vialsPerTray,
+        userId: user.uid,
+        existing: trays,
+        items: [{}],
+        sessionId,
+      });
+      if (id) onTrayAdded(id);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'trays');
+    } finally {
+      setAddingTray(false);
+    }
+  };
+
   const handleAllFull = async () => {
-    if (!user || basket.trayCount <= 0) return;
+    if (!user) return;
     setBulkSaving(true);
     try {
-      await setAllTraysFull({
-        basketId: basket.id,
-        trayCount: basket.trayCount,
-        vialsPerTray: basket.vialsPerTray,
-        userId: user.uid,
-        sessionId,
-        existing: trays,
-      });
+      await setAllTraysFull({ basketId: basket.id, trays, userId: user.uid, sessionId });
       onAllFull();
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `baskets/${basket.id}/trays`);
+      handleFirestoreError(error, OperationType.WRITE, 'trays');
     } finally {
       setBulkSaving(false);
     }
   };
 
-  const trayCount = clampInt(basket.trayCount, 0, MAX_TRAYS);
-  const counted = countedSlots(trays, trayCount);
-  const total = liveBasketTotal(trays, trayCount, basket.looseVials);
+  const active = useMemo(() => activeTrays(trays), [trays]);
+  const counted = traysCountedInSession(trays, sessionId);
+  const total = liveBasketTotal(trays, basket.looseVials);
+  const useFirst = useMemo(() => useFirstTrayId(trays), [trays]);
   const busy = bulkSaving || finishing;
-
-  const gridCols = useMemo(() => (trayCount <= 6 ? 3 : trayCount <= 12 ? 4 : 5), [trayCount]);
+  const gridCols = active.length <= 6 ? 3 : active.length <= 12 ? 4 : 5;
 
   return (
     <div className="flex h-full flex-col px-4 py-2">
@@ -200,86 +224,97 @@ export default function BasketDetail({
           )}
         </div>
         <div className="text-right shrink-0">
-          <p className="text-[10px] font-bold uppercase text-gray-400">Trays counted</p>
+          <p className="text-[10px] font-bold uppercase text-gray-400">Counted now</p>
           <p className="text-base font-bold tabular-nums text-gray-900 leading-tight">
-            {counted}/{trayCount}
+            {counted}/{active.length}
           </p>
           <p className="text-[11px] text-teal-700 font-semibold tabular-nums">{total} vials</p>
         </div>
       </div>
 
       <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-        <Stepper
-          label="Trays"
-          value={trayCount}
-          min={0}
-          max={MAX_TRAYS}
-          disabled={savingLayout || busy}
-          onChange={(next) => setLayout({ trayCount: next })}
-        />
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 px-2"
+          onClick={handleAddTray}
+          disabled={addingTray || busy || active.length >= MAX_TRAYS_PER_BIN}
+          title="A tray was added to this bin"
+        >
+          {addingTray ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5 mr-1" />}
+          Add tray
+        </Button>
         <Stepper
           label="Loose"
           value={clampInt(basket.looseVials)}
           min={0}
           max={999}
           disabled={savingLayout || busy}
-          onChange={(next) => setLayout({ looseVials: next })}
+          onChange={(next) => setLoose(next)}
         />
         <span className="text-[10px] text-gray-400 ml-auto">{basket.vialsPerTray}/tray</span>
       </div>
 
-      {trayCount === 0 ? (
+      {!traysLoaded ? (
+        <div className="flex-1 min-h-0 flex items-center justify-center text-xs text-gray-400 mb-1.5">
+          <Loader2 className="h-4 w-4 animate-spin mr-2" /> Loading trays…
+        </div>
+      ) : active.length === 0 ? (
         <div className="flex-1 min-h-0 flex items-center justify-center rounded-md border border-dashed border-gray-300 text-center px-4 text-xs text-gray-500 mb-1.5">
-          Set how many trays are in this bin with the Trays stepper, then tap each tray to count it.
+          No trays in this bin yet. Tap "Add tray" for each tray inside, then tap a tray to count it.
         </div>
       ) : (
         <div className="flex-1 min-h-0 overflow-y-auto mb-1.5">
           <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))` }}>
             <AnimatePresence>
-              {Array.from({ length: trayCount }, (_, i) => i + 1).map((slot) => {
-                const tray = trays.get(slot);
-                const counted = tray !== undefined;
-                const fillPercentage = counted
-                  ? Math.min(100, Math.max(0, (tray.count / basket.vialsPerTray) * 100))
-                  : 0;
-                const bud = counted ? budStatus(tray.bud) : 'unknown';
-                const title = counted
-                  ? [
-                      `Tray ${slot}: ${tray.count} vials`,
-                      tray.lotNumber ? `Lot ${tray.lotNumber}` : null,
-                      tray.bud ? `BUD ${tray.bud}` : null,
-                    ]
-                      .filter(Boolean)
-                      .join(' · ')
-                  : `Tray ${slot}: not counted`;
+              {active.map((tray, i) => {
+                const doneNow = countedInSession(tray, sessionId);
+                const known = hasBeenCounted(tray);
+                const fillPercentage = known ? Math.min(100, Math.max(0, (tray.count / tray.capacity) * 100)) : 0;
+                const bud = budStatus(tray.bud);
+                const title = [
+                  `Tray ${tray.slot}: ${known ? `${tray.count} vials` : 'not counted'}`,
+                  tray.lotNumber ? `Lot ${tray.lotNumber}` : null,
+                  tray.bud ? `BUD ${tray.bud}` : null,
+                  useFirst === tray.id ? 'USE FIRST' : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ');
                 return (
                   <motion.button
-                    key={slot}
+                    key={tray.id}
                     initial={{ opacity: 0, scale: 0.85 }}
                     animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: Math.min(slot, 12) * 0.03 }}
+                    transition={{ delay: Math.min(i, 12) * 0.03 }}
                     type="button"
                     title={title}
-                    onClick={() => onSelectSlot(slot)}
+                    onClick={() => onSelectTray(tray.id)}
                     disabled={busy}
-                    className={`relative h-11 rounded-md border-2 overflow-hidden flex items-center justify-center text-base font-bold tabular-nums transition-colors ${
-                      counted
+                    className={`relative h-12 rounded-md border-2 overflow-hidden flex items-center justify-center text-base font-bold tabular-nums transition-colors ${
+                      doneNow
                         ? 'bg-teal-50 border-teal-400 text-teal-800'
+                        : known
+                        ? 'bg-white border-gray-300 text-gray-600 hover:border-teal-300'
                         : 'bg-gray-50 border-gray-200 text-gray-400 hover:border-teal-300'
                     }`}
                   >
-                    {counted && (
+                    {known && (
                       <motion.div
                         initial={{ height: 0 }}
                         animate={{ height: `${fillPercentage}%` }}
                         transition={{ type: 'spring', stiffness: 100, damping: 15 }}
-                        className="absolute bottom-0 left-0 right-0 bg-teal-200/50 z-0"
+                        className={`absolute bottom-0 left-0 right-0 z-0 ${doneNow ? 'bg-teal-200/50' : 'bg-gray-200/40'}`}
                       />
                     )}
-                    <span className="absolute top-0.5 left-1 text-[9px] font-semibold text-gray-400 z-10">{slot}</span>
-                    {bud === 'expired' && <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-red-500 z-10" />}
-                    {bud === 'soon' && <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-amber-400 z-10" />}
-                    <span className="z-10">{counted ? tray.count : '—'}</span>
+                    <span className="absolute top-0.5 left-1 text-[9px] font-semibold text-gray-400 z-10">{tray.slot}</span>
+                    {bud === 'expired' && <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-red-500 z-10" title="BUD expired" />}
+                    {bud === 'soon' && <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-amber-400 z-10" title="BUD within 30 days" />}
+                    {useFirst === tray.id && (
+                      <span className="absolute bottom-0.5 right-1 inline-flex items-center text-[8px] font-bold text-amber-700 z-10">
+                        <Star className="h-2.5 w-2.5 mr-0.5" /> 1st
+                      </span>
+                    )}
+                    <span className="z-10">{known ? tray.count : '—'}</span>
                   </motion.button>
                 );
               })}
@@ -289,14 +324,14 @@ export default function BasketDetail({
       )}
 
       <div className="grid grid-cols-3 gap-1.5 mt-auto">
-        <Button variant="outline" className="h-11 px-1" onClick={onStartAiSequence} disabled={busy || trayCount === 0}>
+        <Button variant="outline" className="h-11 px-1" onClick={onStartAiSequence} disabled={busy || active.length === 0}>
           <Wand2 className="h-4 w-4 mr-1" /> AI all
         </Button>
         <Button
           variant="outline"
           className="h-11 px-1 border-teal-300 text-teal-800"
           onClick={handleAllFull}
-          disabled={busy || trayCount === 0}
+          disabled={busy || active.length === 0}
         >
           {bulkSaving ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -307,7 +342,7 @@ export default function BasketDetail({
         <Button
           className="h-11 px-1 bg-teal-600 hover:bg-teal-700 text-white"
           onClick={onFinish}
-          disabled={busy || (trayCount > 0 && counted === 0 && basket.looseVials === 0)}
+          disabled={busy || !traysLoaded || (active.length > 0 && counted === 0 && basket.looseVials === 0)}
           title="Finish this bin and confirm the shelf it goes back on"
         >
           {finishing ? (

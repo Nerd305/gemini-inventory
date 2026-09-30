@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { collection, deleteDoc, doc, onSnapshot, query, setDoc } from 'firebase/firestore';
 import { formatDistanceToNow } from 'date-fns';
 import {
   Archive,
   Boxes,
+  Camera,
   Filter,
   Loader2,
   Pencil,
@@ -12,6 +13,7 @@ import {
   Refrigerator,
   Search,
   Send,
+  Star,
   Trash2,
 } from 'lucide-react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
@@ -25,20 +27,35 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { LabelPrinter } from '../components/LabelPrinter';
 import { HelpTooltip } from '../components/HelpTooltip';
 import { NextStepHint } from '../components/NextStepHint';
+import { readCompoundingLabel } from '../lib/ai';
 import {
+  activeTrays,
   basketQrCode,
   basketTotal,
   budStatus,
   clampInt,
+  createTrays,
+  daysUntilBud,
   DEFAULT_VIALS_PER_TRAY,
   describeShelf,
+  fifoOrder,
   formatBud,
   makeShelfId,
+  MAX_TRAYS_PER_BIN,
+  migrateLegacyTrays,
+  normalizeLabelDate,
   parseShelfId,
+  removeTray,
+  trayLabelSubtitle,
   trayQrCode,
+  trayRecordFromSnapshot,
+  traysForBasketQuery,
   updateBasket,
+  updateTrayLabel,
+  useFirstTrayId,
   type BasketDoc,
-  type TrayDoc,
+  type TrayLabelFields,
+  type TrayRecord,
 } from '../lib/inventory';
 import { LABEL_FORMAT_OPTIONS, sendPrintJobs } from '../lib/printing';
 import type { LabelFormat } from '../shared/types';
@@ -63,6 +80,14 @@ interface BinForm {
   looseVials: number;
 }
 
+interface TrayForm {
+  lotNumber: string;
+  bud: string;
+  dateCompounded: string;
+  labelText: string;
+  count: number;
+}
+
 const EMPTY_FORM: BinForm = {
   productId: '',
   name: '',
@@ -76,6 +101,8 @@ const EMPTY_FORM: BinForm = {
 const selectClass =
   'flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
 
+const isoDate = (v: string | undefined) => (/^\d{4}-\d{2}-\d{2}$/.test(v ?? '') ? (v as string) : '');
+
 function lastCountedText(iso?: string): { text: string; stale: boolean } {
   if (!iso) return { text: 'never counted', stale: true };
   const d = new Date(iso);
@@ -84,8 +111,22 @@ function lastCountedText(iso?: string): { text: string; stale: boolean } {
   return { text: `counted ${formatDistanceToNow(d)} ago`, stale: ageDays > 7 };
 }
 
+function budBadge(bud: string | undefined) {
+  const status = budStatus(bud);
+  const days = daysUntilBud(bud);
+  if (!bud) return null;
+  const cls =
+    status === 'expired'
+      ? 'bg-red-100 text-red-800'
+      : status === 'soon'
+      ? 'bg-amber-100 text-amber-800'
+      : 'bg-gray-100 text-gray-700';
+  const suffix = status === 'expired' ? ' · expired' : status === 'soon' && days !== null ? ` · ${days}d` : '';
+  return <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${cls}`}>BUD {formatBud(bud)}{suffix}</span>;
+}
+
 export default function Bins() {
-  const { role } = useAuth();
+  const { user, role } = useAuth();
   const isAdmin = role === 'admin';
   const { locations, byId: locationsById, nameOf } = useLocations();
 
@@ -104,10 +145,22 @@ export default function Bins() {
 
   const [printData, setPrintData] = useState<{ code: string; title: string; subtitle?: string } | null>(null);
   const [detailBin, setDetailBin] = useState<BinRecord | null>(null);
-  const [detailTrays, setDetailTrays] = useState<TrayDoc[]>([]);
+  const [detailTrays, setDetailTrays] = useState<TrayRecord[]>([]);
+  const [detailTraysLoaded, setDetailTraysLoaded] = useState(false);
+  const migratingRef = useRef<string | null>(null);
   const [trayLabelFormat, setTrayLabelFormat] = useState<LabelFormat>('2.5x1.5');
   const [sendingLabels, setSendingLabels] = useState(false);
   const [labelStatus, setLabelStatus] = useState<string | null>(null);
+
+  // Add / edit tray dialog
+  const [trayDialogOpen, setTrayDialogOpen] = useState(false);
+  const [editingTray, setEditingTray] = useState<TrayRecord | null>(null);
+  const [trayForm, setTrayForm] = useState<TrayForm>({ lotNumber: '', bud: '', dateCompounded: '', labelText: '', count: DEFAULT_VIALS_PER_TRAY });
+  const [savingTray, setSavingTray] = useState(false);
+  const [readingLabel, setReadingLabel] = useState(false);
+  const [trayError, setTrayError] = useState<string | null>(null);
+  const [blankCount, setBlankCount] = useState(1);
+  const labelFileRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     const unsubBins = onSnapshot(
@@ -142,23 +195,39 @@ export default function Bins() {
     };
   }, []);
 
-  // Tray subcollection for the detail dialog.
+  // Trays for the detail dialog.
   useEffect(() => {
     if (!detailBin) {
       setDetailTrays([]);
+      setDetailTraysLoaded(false);
       return;
     }
-    const unsub = onSnapshot(collection(db, 'baskets', detailBin.id, 'trays'), (snap) => {
-      const next: TrayDoc[] = [];
-      snap.forEach((d) => {
-        const t = d.data() as TrayDoc;
-        if (typeof t.slot === 'number') next.push(t);
-      });
-      next.sort((a, b) => a.slot - b.slot);
-      setDetailTrays(next);
-    });
+    setDetailTraysLoaded(false);
+    const unsub = onSnapshot(
+      traysForBasketQuery(detailBin.id),
+      (snap) => {
+        const next: TrayRecord[] = [];
+        snap.forEach((d) => {
+          const t = trayRecordFromSnapshot(d.id, d.data());
+          if (t) next.push(t);
+        });
+        setDetailTrays(next);
+        setDetailTraysLoaded(true);
+      },
+      (error) => handleFirestoreError(error, OperationType.LIST, 'trays'),
+    );
     return () => unsub();
   }, [detailBin?.id]);
+
+  // Legacy bins: copy slot docs into the trays collection the first time the bin is opened.
+  useEffect(() => {
+    if (!detailBin || !user || !detailTraysLoaded || detailTrays.length > 0 || detailBin.migratedTraysAt) return;
+    if (migratingRef.current === detailBin.id) return;
+    migratingRef.current = detailBin.id;
+    migrateLegacyTrays({ basketId: detailBin.id, userId: user.uid }).catch((error) =>
+      handleFirestoreError(error, OperationType.WRITE, 'trays'),
+    );
+  }, [detailBin, user, detailTraysLoaded, detailTrays.length]);
 
   // Keep the detail dialog's bin fresh when the list updates.
   useEffect(() => {
@@ -216,10 +285,7 @@ export default function Bins() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({
-      ...EMPTY_FORM,
-      locationId: locations[0]?.id ?? '',
-    });
+    setForm({ ...EMPTY_FORM, locationId: locations[0]?.id ?? '' });
     setFormError(null);
     setDialogOpen(true);
   };
@@ -247,10 +313,12 @@ export default function Bins() {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
+    if (!user) return;
     if (!form.productId) return setFormError('Pick a product.');
     if (!form.locationId) return setFormError('Pick a fridge / location.');
     const name = form.name.trim() || productName(form.productId);
     const shelfId = form.shelfIndex === '' ? undefined : makeShelfId(form.locationId, Number(form.shelfIndex));
+    const capacity = clampInt(form.vialsPerTray, 1) || DEFAULT_VIALS_PER_TRAY;
 
     setSaving(true);
     try {
@@ -259,8 +327,7 @@ export default function Bins() {
           productId: form.productId,
           locationId: form.locationId,
           name,
-          trayCount: clampInt(form.trayCount),
-          vialsPerTray: clampInt(form.vialsPerTray, 1) || DEFAULT_VIALS_PER_TRAY,
+          vialsPerTray: capacity,
           looseVials: clampInt(form.looseVials),
           shelfId,
         });
@@ -271,18 +338,30 @@ export default function Bins() {
       } else {
         const ref = doc(collection(db, 'baskets'));
         const now = new Date().toISOString();
+        const trayCount = clampInt(form.trayCount, 0, MAX_TRAYS_PER_BIN);
         await setDoc(ref, {
           productId: form.productId,
           locationId: form.locationId,
           name,
-          trayCount: clampInt(form.trayCount),
-          vialsPerTray: clampInt(form.vialsPerTray, 1) || DEFAULT_VIALS_PER_TRAY,
+          trayCount,
+          vialsPerTray: capacity,
           looseVials: clampInt(form.looseVials),
           qrCode: basketQrCode(ref.id),
           ...(shelfId ? { shelfId } : {}),
           createdAt: now,
           updatedAt: now,
+          migratedTraysAt: now, // new bins never had legacy slot docs
         });
+        if (trayCount > 0) {
+          await createTrays({
+            basketId: ref.id,
+            productId: form.productId,
+            capacity,
+            userId: user.uid,
+            existing: [],
+            items: Array.from({ length: trayCount }, () => ({})),
+          });
+        }
         setPrintData({
           code: basketQrCode(ref.id),
           title: name,
@@ -300,7 +379,7 @@ export default function Bins() {
   };
 
   const handleDelete = async (bin: BinRecord) => {
-    if (!window.confirm(`Delete bin "${bin.name}"? Its tray counts will be lost.`)) return;
+    if (!window.confirm(`Delete bin "${bin.name}"? Its trays will be orphaned.`)) return;
     try {
       await deleteDoc(doc(db, 'baskets', bin.id));
       setDetailBin(null);
@@ -321,22 +400,25 @@ export default function Bins() {
     });
   };
 
+  const trayTitle = (bin: BinRecord, t: TrayRecord) => `${bin.name || productName(bin.productId)} · Tray ${t.slot}`;
+
+  const printTrayLabel = (bin: BinRecord, t: TrayRecord) => {
+    setPrintData({ code: trayQrCode(t.id), title: trayTitle(bin, t), subtitle: trayLabelSubtitle(t) });
+  };
+
   const sendTrayLabels = async (bin: BinRecord) => {
-    const count = clampInt(bin.trayCount);
-    if (count === 0) {
-      setLabelStatus('Set the tray count first.');
+    const active = activeTrays(detailTrays);
+    if (active.length === 0) {
+      setLabelStatus('Add trays to this bin first.');
       return;
     }
     setSendingLabels(true);
     setLabelStatus(null);
     try {
-      const title = bin.name || productName(bin.productId);
-      const labels = Array.from({ length: count }, (_, i) => ({
-        code: trayQrCode(bin.id, i + 1),
-        title: `${title} · Tray ${i + 1}`,
-        subtitle: `of ${count} · ${bin.vialsPerTray}/tray`,
-      }));
-      const sent = await sendPrintJobs(labels, trayLabelFormat);
+      const sent = await sendPrintJobs(
+        active.map((t) => ({ code: trayQrCode(t.id), title: trayTitle(bin, t), subtitle: trayLabelSubtitle(t) })),
+        trayLabelFormat,
+      );
       setLabelStatus(`Sent ${sent} tray label${sent === 1 ? '' : 's'} to the Print Station.`);
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'printJobs');
@@ -346,7 +428,125 @@ export default function Bins() {
     }
   };
 
+  // ---- Tray add / edit -------------------------------------------------------
+
+  const openAddTray = (bin: BinRecord) => {
+    setEditingTray(null);
+    setTrayForm({ lotNumber: '', bud: '', dateCompounded: '', labelText: '', count: clampInt(bin.vialsPerTray, 1) || DEFAULT_VIALS_PER_TRAY });
+    setTrayError(null);
+    setTrayDialogOpen(true);
+  };
+
+  const openEditTray = (t: TrayRecord) => {
+    setEditingTray(t);
+    setTrayForm({
+      lotNumber: t.lotNumber ?? '',
+      bud: isoDate(t.bud),
+      dateCompounded: isoDate(t.dateCompounded),
+      labelText: t.labelText ?? '',
+      count: t.count,
+    });
+    setTrayError(null);
+    setTrayDialogOpen(true);
+  };
+
+  const readLabelPhoto = async (file: File) => {
+    setReadingLabel(true);
+    setTrayError(null);
+    try {
+      const dataUrl: string = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error('Could not read image'));
+        reader.readAsDataURL(file);
+      });
+      const l = await readCompoundingLabel(dataUrl);
+      if (!l) {
+        setTrayError('No label text found in that photo. Try a closer shot of the white label.');
+        return;
+      }
+      setTrayForm((f) => ({
+        ...f,
+        lotNumber: l.lotNumber ?? f.lotNumber,
+        bud: isoDate(normalizeLabelDate(l.bud)) || f.bud,
+        dateCompounded: isoDate(normalizeLabelDate(l.dateCompounded)) || f.dateCompounded,
+        labelText: [l.product, l.strength].filter(Boolean).join(' ') || f.labelText,
+      }));
+    } catch (error) {
+      setTrayError(error instanceof Error ? error.message : 'Label read failed');
+    } finally {
+      setReadingLabel(false);
+      if (labelFileRef.current) labelFileRef.current.value = '';
+    }
+  };
+
+  const saveTray = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!detailBin || !user) return;
+    setSavingTray(true);
+    setTrayError(null);
+    const label: TrayLabelFields = {
+      lotNumber: trayForm.lotNumber,
+      bud: trayForm.bud,
+      dateCompounded: trayForm.dateCompounded,
+      labelText: trayForm.labelText,
+    };
+    try {
+      if (editingTray) {
+        await updateTrayLabel(editingTray.id, label);
+      } else {
+        await createTrays({
+          basketId: detailBin.id,
+          productId: detailBin.productId,
+          capacity: clampInt(detailBin.vialsPerTray, 1) || DEFAULT_VIALS_PER_TRAY,
+          userId: user.uid,
+          existing: detailTrays,
+          items: [{ count: clampInt(trayForm.count), label, countedNow: true }],
+        });
+      }
+      setTrayDialogOpen(false);
+      setEditingTray(null);
+    } catch (error) {
+      handleFirestoreError(error, editingTray ? OperationType.UPDATE : OperationType.CREATE, 'trays');
+      setTrayError('Could not save the tray.');
+    } finally {
+      setSavingTray(false);
+    }
+  };
+
+  const addBlankTrays = async () => {
+    if (!detailBin || !user) return;
+    const n = clampInt(blankCount, 1, MAX_TRAYS_PER_BIN);
+    setSavingTray(true);
+    try {
+      await createTrays({
+        basketId: detailBin.id,
+        productId: detailBin.productId,
+        capacity: clampInt(detailBin.vialsPerTray, 1) || DEFAULT_VIALS_PER_TRAY,
+        userId: user.uid,
+        existing: detailTrays,
+        items: Array.from({ length: n }, () => ({})),
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'trays');
+    } finally {
+      setSavingTray(false);
+    }
+  };
+
+  const handleRemoveTray = async (t: TrayRecord) => {
+    if (!user) return;
+    if (!window.confirm(`Remove tray ${t.slot} from this bin?`)) return;
+    try {
+      await removeTray({ tray: t, allTrays: detailTrays, userId: user.uid });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `trays/${t.id}`);
+    }
+  };
+
   const totalVialsShown = filtered.reduce((s, b) => s + basketTotal(b), 0);
+  const detailActive = useMemo(() => fifoOrder(detailTrays), [detailTrays]);
+  const detailUseFirst = useMemo(() => useFirstTrayId(detailTrays), [detailTrays]);
 
   return (
     <div className="space-y-6">
@@ -354,7 +554,7 @@ export default function Bins() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center">
             Bins
-            <HelpTooltip content="A bin is the plastic basket that sits on a fridge shelf and holds trays of one product. Each bin gets a BSKT: QR label; scanning it during a count opens that bin's trays." />
+            <HelpTooltip content="A bin is the plastic basket that sits on a fridge shelf and holds trays of one product. Each bin gets a BSKT: QR label; each tray inside can get its own TRAY: label carrying its lot and BUD so the earliest tray is always used first." />
           </h1>
           <p className="text-sm text-gray-500">
             {bins.length} bin{bins.length === 1 ? '' : 's'} · {totalVialsShown.toLocaleString()} vials on hand (last known)
@@ -372,7 +572,7 @@ export default function Bins() {
       )}
       {!loading && bins.length > 0 && bins.some((b) => !b.lastCountedAt) && (
         <NextStepHint to="/count" cta="Start Count">
-          Next: tap a bin and print its <strong>Bin label</strong> into the tag sleeve, then run a count. Scan the shelf, scan the bin, tap each tray.
+          Next: tap a bin, register its trays (lot / BUD from the label), print the <strong>Bin label</strong> into the tag sleeve, then run a count.
         </NextStepHint>
       )}
 
@@ -472,7 +672,7 @@ export default function Bins() {
         </div>
       )}
 
-      {/* Create / edit dialog */}
+      {/* Create / edit bin dialog */}
       <Dialog
         open={dialogOpen}
         onOpenChange={(open) => {
@@ -486,7 +686,7 @@ export default function Bins() {
           <DialogHeader>
             <DialogTitle>{editing ? 'Edit Bin' : 'Add Bin'}</DialogTitle>
             <DialogDescription>
-              One product per bin. Tray count can be adjusted later during a count.
+              {editing ? 'Trays are managed from the bin detail.' : 'One product per bin. Trays get added as blank slots you can label afterwards.'}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSave} className="space-y-4">
@@ -579,14 +779,19 @@ export default function Bins() {
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-2">
                 <Label htmlFor="bin-trays">Trays</Label>
-                <Input
-                  id="bin-trays"
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  value={form.trayCount}
-                  onChange={(e) => setForm((f) => ({ ...f, trayCount: clampInt(e.target.value) }))}
-                />
+                {editing ? (
+                  <p className="h-10 flex items-center text-sm text-gray-600">{clampInt(editing.trayCount)} (in detail)</p>
+                ) : (
+                  <Input
+                    id="bin-trays"
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    max={MAX_TRAYS_PER_BIN}
+                    value={form.trayCount}
+                    onChange={(e) => setForm((f) => ({ ...f, trayCount: clampInt(e.target.value, 0, MAX_TRAYS_PER_BIN) }))}
+                  />
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="bin-vpt">Vials / tray</Label>
@@ -636,7 +841,7 @@ export default function Bins() {
 
       {/* Bin detail dialog */}
       <Dialog open={!!detailBin} onOpenChange={(open) => !open && setDetailBin(null)}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
           {detailBin && (
             <>
               <DialogHeader>
@@ -652,7 +857,7 @@ export default function Bins() {
               <div className="grid grid-cols-3 gap-2 text-center">
                 <div className="rounded-lg border bg-gray-50 p-2">
                   <p className="text-[10px] uppercase text-gray-500">Trays</p>
-                  <p className="text-lg font-bold tabular-nums">{clampInt(detailBin.trayCount)}</p>
+                  <p className="text-lg font-bold tabular-nums">{detailTraysLoaded ? detailActive.length : clampInt(detailBin.trayCount)}</p>
                 </div>
                 <div className="rounded-lg border bg-gray-50 p-2">
                   <p className="text-[10px] uppercase text-gray-500">Loose</p>
@@ -670,36 +875,69 @@ export default function Bins() {
               </p>
 
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1.5">Trays</p>
-                {clampInt(detailBin.trayCount) === 0 ? (
-                  <p className="text-sm text-gray-500">No trays declared.</p>
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Trays · use-first order
+                    <HelpTooltip content="Sorted by beyond-use date, earliest first (then date compounded). The tray marked USE FIRST is the one to pull from." />
+                  </p>
+                  <Button variant="outline" size="sm" className="h-8" onClick={() => openAddTray(detailBin)} disabled={!detailTraysLoaded}>
+                    <Plus className="h-3.5 w-3.5 mr-1" /> Add tray
+                  </Button>
+                </div>
+                {!detailTraysLoaded ? (
+                  <p className="text-sm text-gray-400 flex items-center"><Loader2 className="h-4 w-4 animate-spin mr-2" /> Loading trays…</p>
+                ) : detailActive.length === 0 ? (
+                  <div className="rounded-md border border-dashed border-gray-300 p-3 text-sm text-gray-500 space-y-2">
+                    <p>No trays registered in this bin yet. Add each tray with its label, or add blank trays now and fill in lot / BUD during the first count.</p>
+                    <div className="flex items-center gap-2">
+                      <Input type="number" inputMode="numeric" min={1} max={MAX_TRAYS_PER_BIN} value={blankCount} onChange={(e) => setBlankCount(clampInt(e.target.value, 1, MAX_TRAYS_PER_BIN))} className="w-20 h-9" />
+                      <Button size="sm" variant="secondary" onClick={addBlankTrays} disabled={savingTray}>
+                        {savingTray ? <Loader2 className="h-4 w-4 animate-spin" /> : `Add ${blankCount} blank tray${blankCount === 1 ? '' : 's'}`}
+                      </Button>
+                    </div>
+                  </div>
                 ) : (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                    {Array.from({ length: clampInt(detailBin.trayCount) }, (_, i) => i + 1).map((slot) => {
-                      const t = detailTrays.find((x) => x.slot === slot);
-                      const bud = t ? budStatus(t.bud) : 'unknown';
+                  <div className="divide-y divide-gray-100 rounded-lg border border-gray-200">
+                    {detailActive.map((t) => {
+                      const first = detailUseFirst === t.id;
                       return (
-                        <div
-                          key={slot}
-                          className={`rounded-md border px-2 py-1.5 text-xs ${
-                            t ? 'border-teal-200 bg-teal-50' : 'border-dashed border-gray-300 bg-white text-gray-400'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="font-semibold text-gray-700">Tray {slot}</span>
-                            <span className="font-bold tabular-nums text-teal-800">{t ? t.count : '—'}</span>
+                        <div key={t.id} className={`flex items-center gap-3 px-3 py-2 ${first ? 'bg-amber-50/60' : ''}`}>
+                          <div className="w-9 shrink-0 text-center">
+                            <p className="text-[10px] uppercase text-gray-400">Tray</p>
+                            <p className="text-base font-bold text-gray-800 tabular-nums">{t.slot}</p>
                           </div>
-                          {t?.lotNumber && <p className="text-[11px] text-gray-600 truncate">Lot {t.lotNumber}</p>}
-                          {t?.bud && (
-                            <p
-                              className={`text-[11px] truncate ${
-                                bud === 'expired' ? 'text-red-600 font-semibold' : bud === 'soon' ? 'text-amber-700' : 'text-gray-600'
-                              }`}
-                            >
-                              BUD {formatBud(t.bud)}
-                              {bud === 'expired' ? ' · expired' : bud === 'soon' ? ' · soon' : ''}
-                            </p>
-                          )}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {first && (
+                                <span className="inline-flex items-center rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-bold text-white">
+                                  <Star className="h-3 w-3 mr-0.5" /> USE FIRST
+                                </span>
+                              )}
+                              {t.lotNumber ? (
+                                <span className="text-xs font-medium text-gray-800">Lot {t.lotNumber}</span>
+                              ) : (
+                                <span className="text-xs text-gray-400 italic">no lot on file</span>
+                              )}
+                              {budBadge(t.bud)}
+                              {t.dateCompounded && <span className="text-[11px] text-gray-500">Cmpd {formatBud(t.dateCompounded)}</span>}
+                            </div>
+                            {t.labelText && <p className="text-[11px] text-gray-500 truncate">{t.labelText}</p>}
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-base font-bold text-teal-700 tabular-nums">{t.countedAt ? t.count : '—'}</p>
+                            <p className="text-[10px] text-gray-400">/{t.capacity}</p>
+                          </div>
+                          <div className="flex shrink-0 gap-0.5">
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditTray(t)} title="Edit lot / BUD">
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => printTrayLabel(detailBin, t)} title="Print this tray's label">
+                              <Printer className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-red-600" onClick={() => handleRemoveTray(t)} title="Remove tray from bin">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
                         </div>
                       );
                     })}
@@ -732,19 +970,90 @@ export default function Bins() {
                     size="sm"
                     className="bg-indigo-600 hover:bg-indigo-700"
                     onClick={() => sendTrayLabels(detailBin)}
-                    disabled={sendingLabels || clampInt(detailBin.trayCount) === 0}
+                    disabled={sendingLabels || detailActive.length === 0}
                   >
                     {sendingLabels ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}
-                    Send {clampInt(detailBin.trayCount)} tray labels
+                    Send {detailActive.length} tray label{detailActive.length === 1 ? '' : 's'}
                   </Button>
                 </div>
                 <p className="text-[11px] text-gray-500">
-                  Tray labels (TRAY: codes) are optional — scanning one during a count jumps straight to that tray slot.
+                  Each tray label carries its QR plus lot and BUD. Stick it on the tray; scanning it during a count opens that tray directly.
                 </p>
                 {labelStatus && <p className="text-xs text-teal-700">{labelStatus}</p>}
               </div>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Add / edit tray dialog */}
+      <Dialog
+        open={trayDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setTrayDialogOpen(false);
+            setEditingTray(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingTray ? `Tray ${editingTray.slot} · lot & BUD` : 'Add tray'}</DialogTitle>
+            <DialogDescription>
+              Copy the compounding label on the tray, or photograph it and let the AI read it.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={saveTray} className="space-y-3">
+            <input
+              ref={labelFileRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) readLabelPhoto(f);
+              }}
+            />
+            <Button type="button" variant="outline" className="w-full" onClick={() => labelFileRef.current?.click()} disabled={readingLabel}>
+              {readingLabel ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Camera className="h-4 w-4 mr-2" />}
+              {readingLabel ? 'Reading label…' : 'Photograph the label'}
+            </Button>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="tray-lot">Lot #</Label>
+                <Input id="tray-lot" value={trayForm.lotNumber} onChange={(e) => setTrayForm((f) => ({ ...f, lotNumber: e.target.value }))} placeholder="260622@1" />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="tray-bud">BUD</Label>
+                <Input id="tray-bud" type="date" value={trayForm.bud} onChange={(e) => setTrayForm((f) => ({ ...f, bud: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="tray-cmpd">Date compounded</Label>
+                <Input id="tray-cmpd" type="date" value={trayForm.dateCompounded} onChange={(e) => setTrayForm((f) => ({ ...f, dateCompounded: e.target.value }))} />
+              </div>
+              {!editingTray && (
+                <div className="space-y-1">
+                  <Label htmlFor="tray-count">Vials in tray now</Label>
+                  <Input id="tray-count" type="number" inputMode="numeric" min={0} value={trayForm.count} onChange={(e) => setTrayForm((f) => ({ ...f, count: clampInt(e.target.value) }))} />
+                </div>
+              )}
+              <div className="space-y-1 col-span-2">
+                <Label htmlFor="tray-text">Label text</Label>
+                <Input id="tray-text" value={trayForm.labelText} onChange={(e) => setTrayForm((f) => ({ ...f, labelText: e.target.value }))} placeholder="BPC-157 (PHENOL FREE MDV) 5MG/ML (5ML)" />
+              </div>
+            </div>
+            {trayError && <p className="text-sm text-red-600">{trayError}</p>}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setTrayDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={savingTray || readingLabel}>
+                {savingTray ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                {editingTray ? 'Save' : 'Add tray'}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 

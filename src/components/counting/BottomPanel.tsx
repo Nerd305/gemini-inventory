@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { collection, doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCountingSession } from '../../contexts/CountingSessionContext';
@@ -8,15 +8,18 @@ import BasketDetail, { type BasketSummary } from './BasketDetail';
 import TrayCount from './TrayCount';
 import PutBackConfirm from './PutBackConfirm';
 import {
-  allSlotsCounted,
+  activeTrays,
+  allTraysCountedInSession,
   clampInt,
   DEFAULT_VIALS_PER_TRAY,
   finalizeBasketCount,
-  nextUncountedSlot,
-  updateBasket,
+  migrateLegacyTrays,
+  nextUncountedTray,
+  trayRecordFromSnapshot,
+  traysForBasketQuery,
+  useFirstTrayId,
   type BasketDoc,
-  type TrayDoc,
-  type TrayMap,
+  type TrayRecord,
 } from '../../lib/inventory';
 
 interface PutBackContext {
@@ -30,21 +33,24 @@ const panelClass =
 
 export default function BottomPanel() {
   const { user } = useAuth();
-  const { activeBasketId, pendingTraySlot, clearPendingTraySlot, sessionId } = useCountingSession();
+  const { activeBasketId, pendingTray, clearPendingTray, sessionId } = useCountingSession();
 
   const [basket, setBasket] = useState<BasketSummary | null>(null);
   const [basketMissing, setBasketMissing] = useState(false);
-  const [trays, setTrays] = useState<TrayMap>(new Map());
-  const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
+  const [trays, setTrays] = useState<TrayRecord[]>([]);
+  const [traysLoaded, setTraysLoaded] = useState(false);
+  const [selectedTrayId, setSelectedTrayId] = useState<string | null>(null);
   const [aiSequence, setAiSequence] = useState(false);
   const [putBack, setPutBack] = useState<PutBackContext | null>(null);
   const [finishing, setFinishing] = useState(false);
+  const migratingRef = useRef<string | null>(null);
 
   // Whenever the active basket changes, reset per-basket UI state.
   useEffect(() => {
-    setSelectedSlot(null);
+    setSelectedTrayId(null);
     setAiSequence(false);
-    setTrays(new Map());
+    setTrays([]);
+    setTraysLoaded(false);
     setBasket(null);
     setBasketMissing(false);
   }, [activeBasketId]);
@@ -98,6 +104,7 @@ export default function BottomPanel() {
           shelfId: data.shelfId ?? null,
           totalVials: typeof data.totalVials === 'number' ? data.totalVials : undefined,
           lastCountedAt: data.lastCountedAt,
+          migratedTraysAt: data.migratedTraysAt,
         });
       },
       (error) => handleFirestoreError(error, OperationType.GET, `baskets/${activeBasketId}`),
@@ -108,41 +115,57 @@ export default function BottomPanel() {
     };
   }, [activeBasketId]);
 
-  // Subscribe to tray subcollection.
+  // Subscribe to the bin's trays.
   useEffect(() => {
     if (!activeBasketId) {
-      setTrays(new Map());
+      setTrays([]);
+      setTraysLoaded(false);
       return;
     }
-    const traysRef = collection(db, 'baskets', activeBasketId, 'trays');
-    const unsub = onSnapshot(traysRef, (snap) => {
-      const next: TrayMap = new Map();
-      snap.docs.forEach((d) => {
-        const data = d.data() as TrayDoc;
-        if (typeof data.slot === 'number' && typeof data.count === 'number') {
-          next.set(data.slot, data);
-        }
-      });
-      setTrays(next);
-    });
+    const unsub = onSnapshot(
+      traysForBasketQuery(activeBasketId),
+      (snap) => {
+        const next: TrayRecord[] = [];
+        snap.forEach((d) => {
+          const t = trayRecordFromSnapshot(d.id, d.data());
+          if (t) next.push(t);
+        });
+        setTrays(next);
+        setTraysLoaded(true);
+      },
+      (error) => handleFirestoreError(error, OperationType.LIST, 'trays'),
+    );
     return () => unsub();
   }, [activeBasketId]);
 
-  // A TRAY: scan jumps straight into that tray once the bin has loaded.
+  // Bins created before trays had their own documents: copy the legacy slot docs over once.
   useEffect(() => {
-    if (pendingTraySlot === null || !basket) return;
-    // The basket state lags activeBasketId by one snapshot; never act on the previous bin's object.
-    if (basket.id !== activeBasketId) return;
-    if (pendingTraySlot > basket.trayCount) {
-      updateBasket(basket.id, { trayCount: pendingTraySlot }).catch((error) =>
-        handleFirestoreError(error, OperationType.UPDATE, `baskets/${basket.id}`),
-      );
+    if (!basket || !user || !traysLoaded || trays.length > 0) return;
+    if (basket.id !== activeBasketId || basket.migratedTraysAt) return;
+    if (migratingRef.current === basket.id) return;
+    migratingRef.current = basket.id;
+    migrateLegacyTrays({ basketId: basket.id, userId: user.uid }).catch((error) =>
+      handleFirestoreError(error, OperationType.WRITE, 'trays'),
+    );
+  }, [basket, user, traysLoaded, trays.length, activeBasketId]);
+
+  // A TRAY: scan jumps straight into that tray once the bin and its trays have loaded.
+  useEffect(() => {
+    if (!pendingTray || !basket || basket.id !== activeBasketId || !traysLoaded) return;
+    const match = pendingTray.trayId
+      ? trays.find((t) => t.id === pendingTray.trayId)
+      : trays.find((t) => t.status === 'active' && t.slot === pendingTray.slot);
+    if (!match) {
+      // Legacy slot labels may point at a bin that is still migrating; wait for the trays to appear.
+      if (trays.length === 0 && !basket.migratedTraysAt) return;
+      clearPendingTray();
+      return;
     }
     setPutBack(null);
     setAiSequence(false);
-    setSelectedSlot(pendingTraySlot);
-    clearPendingTraySlot();
-  }, [pendingTraySlot, basket, activeBasketId, clearPendingTraySlot]);
+    setSelectedTrayId(match.id);
+    clearPendingTray();
+  }, [pendingTray, basket, activeBasketId, trays, traysLoaded, clearPendingTray]);
 
   const startPutBack = useCallback(async () => {
     if (!basket || !user) return;
@@ -154,36 +177,41 @@ export default function BottomPanel() {
     } finally {
       setFinishing(false);
     }
-    setSelectedSlot(null);
+    setSelectedTrayId(null);
     setAiSequence(false);
     setPutBack({ basketId: basket.id, expectedShelfId: basket.shelfId, productName: basket.productName });
   }, [basket, user, sessionId]);
 
   // After a tray is accepted: continue the AI sequence, or finish the bin when the last tray is done.
-  const handleAcceptSlot = (slot: number, count: number) => {
+  const handleAcceptTray = (trayId: string, count: number) => {
     if (!basket) {
-      setSelectedSlot(null);
+      setSelectedTrayId(null);
       return;
     }
-    const projected: TrayMap = new Map(trays);
-    projected.set(slot, { ...(trays.get(slot) ?? { slot }), slot, count });
-
-    if (allSlotsCounted(projected, basket.trayCount)) {
+    const now = new Date().toISOString();
+    const projected = trays.map((t) =>
+      t.id === trayId ? { ...t, count, countedAt: now, sessionId: sessionId ?? t.sessionId } : t,
+    );
+    if (allTraysCountedInSession(projected, sessionId)) {
       void startPutBack();
       return;
     }
     if (!aiSequence) {
-      setSelectedSlot(null);
+      setSelectedTrayId(null);
       return;
     }
-    const next = nextUncountedSlot(projected, basket.trayCount, slot);
-    if (next === null) {
-      setSelectedSlot(null);
+    const next = nextUncountedTray(projected, sessionId, trayId);
+    if (!next) {
+      setSelectedTrayId(null);
       setAiSequence(false);
     } else {
-      setSelectedSlot(next);
+      setSelectedTrayId(next.id);
     }
   };
+
+  const active = useMemo(() => activeTrays(trays), [trays]);
+  const selectedTray = selectedTrayId ? active.find((t) => t.id === selectedTrayId) ?? null : null;
+  const useFirst = useMemo(() => useFirstTrayId(trays), [trays]);
 
   // Routing
   if (putBack) {
@@ -200,20 +228,24 @@ export default function BottomPanel() {
     );
   }
 
-  if (activeBasketId && basket && selectedSlot !== null) {
+  if (activeBasketId && basket && selectedTray) {
     return (
       <div className={panelClass}>
         <TrayCount
-          basketId={basket.id}
+          tray={selectedTray}
+          position={active.findIndex((t) => t.id === selectedTray.id) + 1}
+          total={active.length}
+          allTrays={trays}
           productId={basket.productId}
-          slot={selectedSlot}
-          trayCount={basket.trayCount}
-          existing={trays.get(selectedSlot) ?? null}
-          vialsPerTray={basket.vialsPerTray}
+          useFirst={useFirst === selectedTray.id}
           sequenceLabel={aiSequence ? 'AI sequence' : undefined}
-          onAccept={handleAcceptSlot}
+          onAccept={handleAcceptTray}
+          onRemoved={() => {
+            setSelectedTrayId(null);
+            setAiSequence(false);
+          }}
           onCancel={() => {
-            setSelectedSlot(null);
+            setSelectedTrayId(null);
             setAiSequence(false);
           }}
         />
@@ -242,12 +274,18 @@ export default function BottomPanel() {
         <BasketDetail
           basket={basket}
           trays={trays}
+          traysLoaded={traysLoaded}
           finishing={finishing}
-          onSelectSlot={(slot) => setSelectedSlot(slot)}
+          onSelectTray={(id) => setSelectedTrayId(id)}
+          onTrayAdded={(id) => {
+            setAiSequence(false);
+            setSelectedTrayId(id);
+          }}
           onStartAiSequence={() => {
-            const start = nextUncountedSlot(trays, basket.trayCount, null) ?? 1;
+            const start = nextUncountedTray(trays, sessionId, null) ?? active[0];
+            if (!start) return;
             setAiSequence(true);
-            setSelectedSlot(start);
+            setSelectedTrayId(start.id);
           }}
           onAllFull={() => void startPutBack()}
           onFinish={() => void startPutBack()}

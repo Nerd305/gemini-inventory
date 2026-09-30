@@ -240,3 +240,50 @@ export async function countVialsInTray(
     throw new Error('Failed to analyze vial tray. Please try again.');
   }
 }
+
+/**
+ * Transcribe a compounding label on its own (no counting). Used when registering a tray
+ * in a bin, where the photo is usually a close-up of the white label strip.
+ */
+export async function readCompoundingLabel(base64Image: string): Promise<TrayLabelExtraction | null> {
+  if (!base64Image || !base64Image.includes('base64,')) {
+    throw new Error('Invalid image format. Please upload a valid image.');
+  }
+  const prompt =
+    'This photo shows a pharmacy compounding label (a printed white strip) on or near a tray of medication vials. ' +
+    'Transcribe the label fields exactly as printed. Typical fields: product name (may include strength like "5MG/ML (5ML)"), ' +
+    '"Lot #", "Date Compounded", "BUD" (beyond-use date), "Quantity made". Handwritten sticky notes are not the label; ignore them. ' +
+    'Return ONLY valid JSON of the shape ' +
+    '{"product": string|null, "strength": string|null, "lotNumber": string|null, "dateCompounded": string|null, "bud": string|null, "quantityMade": string|null}. ' +
+    'Use null for anything not visible.';
+  const response = await getClient().models.generateContent({
+    model: 'gemini-2.5-flash',
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          { text: prompt },
+          {
+            inlineData: {
+              data: base64Image.split(',')[1],
+              mimeType: base64Image.split(';')[0].split(':')[1],
+            },
+          },
+        ],
+      },
+    ],
+    config: { responseMimeType: 'application/json' },
+  });
+  if (!response.text) return null;
+  const l = JSON.parse(response.text);
+  if (!l || typeof l !== 'object') return null;
+  const candidate: TrayLabelExtraction = {
+    product: str(l.product),
+    strength: str(l.strength),
+    lotNumber: str(l.lotNumber ?? l.lot),
+    dateCompounded: str(l.dateCompounded),
+    bud: str(l.bud ?? l.beyondUseDate),
+    quantityMade: str(l.quantityMade),
+  };
+  return Object.values(candidate).some((v) => v !== null) ? candidate : null;
+}

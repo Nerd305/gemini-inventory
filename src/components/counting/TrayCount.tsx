@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, Camera, Check, X, Sparkles, Pencil, Tag, AlertTriangle } from 'lucide-react';
+import { Loader2, Camera, Check, X, Sparkles, Pencil, Tag, AlertTriangle, Trash2, Star } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { handleFirestoreError, OperationType } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -13,20 +13,23 @@ import {
   formatBud,
   normalizeLabelDate,
   recordTrayCount,
+  removeTray,
   TRAY_GRID,
-  type TrayDoc,
   type TrayLabelFields,
+  type TrayRecord,
 } from '../../lib/inventory';
 
 interface TrayCountProps {
-  basketId: string;
+  tray: TrayRecord;
+  /** 1-based position among the bin's active trays, and how many there are. */
+  position: number;
+  total: number;
+  allTrays: TrayRecord[];
   productId: string;
-  slot: number;
-  trayCount: number;
-  existing: TrayDoc | null;
-  vialsPerTray: number;
-  onAccept: (slot: number, count: number) => void;
+  useFirst: boolean;
+  onAccept: (trayId: string, count: number) => void;
   onCancel: () => void;
+  onRemoved: () => void;
   sequenceLabel?: string;
 }
 
@@ -52,55 +55,52 @@ function PocketGrid({ count, capacity }: { count: number; capacity: number }) {
 }
 
 export default function TrayCount({
-  basketId,
+  tray,
+  position,
+  total,
+  allTrays,
   productId,
-  slot,
-  trayCount,
-  existing,
-  vialsPerTray,
+  useFirst,
   onAccept,
   onCancel,
+  onRemoved,
   sequenceLabel,
 }: TrayCountProps) {
   const { user } = useAuth();
   const { sessionId } = useCountingSession();
-  const [count, setCount] = useState<number>(existing?.count ?? vialsPerTray);
+  const capacity = tray.capacity;
+  const previouslyCounted = Boolean(tray.countedAt);
+  const [count, setCount] = useState<number>(previouslyCounted ? tray.count : capacity);
   const [label, setLabel] = useState<TrayLabelFields>({
-    lotNumber: existing?.lotNumber,
-    bud: existing?.bud,
-    dateCompounded: existing?.dateCompounded,
-    labelText: existing?.labelText,
+    lotNumber: tray.lotNumber,
+    bud: tray.bud,
+    dateCompounded: tray.dateCompounded,
+    labelText: tray.labelText,
   });
   const [editingLabel, setEditingLabel] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiNote, setAiNote] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const aiPredictionRef = useRef<number | null>(null);
   const lastImageRef = useRef<string | undefined>(undefined);
 
-  // Snapshots rebuild the tray map (new object identities) on every write to the bin; only reset
-  // the editor when the slot or the stored values actually change.
-  const existingKey = existing
-    ? `${existing.count}|${existing.countedAt ?? ''}|${existing.lotNumber ?? ''}|${existing.bud ?? ''}|${existing.labelText ?? ''}`
-    : 'none';
+  // Snapshots rebuild tray objects on every write to the bin; only reset the editor when the
+  // tray or its stored values actually change.
+  const trayKey = `${tray.id}|${tray.count}|${tray.countedAt ?? ''}|${tray.lotNumber ?? ''}|${tray.bud ?? ''}|${tray.labelText ?? ''}`;
 
   useEffect(() => {
-    setCount(existing?.count ?? vialsPerTray);
-    setLabel({
-      lotNumber: existing?.lotNumber,
-      bud: existing?.bud,
-      dateCompounded: existing?.dateCompounded,
-      labelText: existing?.labelText,
-    });
+    setCount(tray.countedAt ? tray.count : capacity);
+    setLabel({ lotNumber: tray.lotNumber, bud: tray.bud, dateCompounded: tray.dateCompounded, labelText: tray.labelText });
     setEditingLabel(false);
     setAiError(null);
     setAiNote(null);
     aiPredictionRef.current = null;
     lastImageRef.current = undefined;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slot, existingKey, vialsPerTray]);
+  }, [trayKey, capacity]);
 
   const runAi = async (file: File) => {
     setAiLoading(true);
@@ -113,7 +113,7 @@ export default function TrayCount({
         reader.onerror = () => reject(new Error('Could not read image'));
         reader.readAsDataURL(file);
       });
-      const result = await countVialsInTray(dataUrl, { capacity: vialsPerTray });
+      const result = await countVialsInTray(dataUrl, { capacity });
       setCount(result.vialCount);
       aiPredictionRef.current = result.vialCount;
       lastImageRef.current = dataUrl;
@@ -142,12 +142,10 @@ export default function TrayCount({
     setSaving(true);
     try {
       await recordTrayCount({
-        basketId,
-        slot,
+        tray,
         count,
         userId: user.uid,
         sessionId,
-        previous: existing,
         aiPrediction: aiPredictionRef.current,
         label,
       });
@@ -158,16 +156,30 @@ export default function TrayCount({
         aiPrediction: aiPredictionRef.current || undefined,
         userFinalCount: count,
         productId,
-        trayId: `slot-${slot}`,
-        basketId,
+        trayId: tray.id,
+        basketId: tray.basketId,
         userId: user.uid,
       });
 
-      onAccept(slot, count);
+      onAccept(tray.id, count);
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `baskets/${basketId}/trays/slot-${slot}`);
+      handleFirestoreError(error, OperationType.WRITE, `trays/${tray.id}`);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleRemove = async () => {
+    if (!user) return;
+    if (!window.confirm(`Remove tray ${position} from this bin? Use this when the tray is empty or has been taken out.`)) return;
+    setRemoving(true);
+    try {
+      await removeTray({ tray, allTrays, userId: user.uid });
+      onRemoved();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `trays/${tray.id}`);
+    } finally {
+      setRemoving(false);
     }
   };
 
@@ -177,7 +189,7 @@ export default function TrayCount({
   const bud = budStatus(label.bud);
   const budDays = daysUntilBud(label.bud);
   const hasLabel = Boolean(label.lotNumber || label.bud || label.labelText);
-  const overCapacity = count > vialsPerTray;
+  const overCapacity = count > capacity;
 
   const budText = useMemo(() => {
     if (!label.bud) return null;
@@ -190,12 +202,17 @@ export default function TrayCount({
     <div className="flex h-full flex-col px-4 py-2 overflow-y-auto">
       <div className="flex items-center justify-between mb-1">
         <div className="min-w-0">
-          <p className="text-xs font-bold uppercase tracking-wide text-teal-700 truncate">
-            Tray {slot} of {Math.max(trayCount, slot)}
+          <p className="text-xs font-bold uppercase tracking-wide text-teal-700 truncate flex items-center gap-1.5">
+            Tray {position} of {total}
             {sequenceLabel ? ` · ${sequenceLabel}` : ''}
+            {useFirst && (
+              <span className="inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-800 normal-case tracking-normal">
+                <Star className="h-2.5 w-2.5 mr-0.5" /> Use first
+              </span>
+            )}
           </p>
           <p className="text-[11px] text-gray-500">
-            {existing ? `Previously ${existing.count}` : 'Not counted yet'} · full tray = {vialsPerTray}
+            {previouslyCounted ? `Previously ${tray.count}` : 'Not counted yet'} · full tray = {capacity}
           </p>
         </div>
         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onCancel} aria-label="Cancel">
@@ -226,18 +243,18 @@ export default function TrayCount({
           <Button variant="outline" className="h-11 w-11 px-0 text-sm" onClick={() => inc(5)}>+5</Button>
         </motion.div>
         <div className="ml-2 hidden min-[380px]:block">
-          <PocketGrid count={count} capacity={vialsPerTray} />
+          <PocketGrid count={count} capacity={capacity} />
         </div>
       </div>
 
       <div className="grid grid-cols-3 gap-1.5 mb-1">
         <Button
-          variant={count === vialsPerTray ? 'default' : 'secondary'}
-          className={`h-10 ${count === vialsPerTray ? 'bg-teal-600 hover:bg-teal-700 text-white' : ''}`}
-          onClick={() => setCount(vialsPerTray)}
+          variant={count === capacity ? 'default' : 'secondary'}
+          className={`h-10 ${count === capacity ? 'bg-teal-600 hover:bg-teal-700 text-white' : ''}`}
+          onClick={() => setCount(capacity)}
           disabled={aiLoading}
         >
-          <Sparkles className="h-4 w-4 mr-1" /> Full {vialsPerTray}
+          <Sparkles className="h-4 w-4 mr-1" /> Full {capacity}
         </Button>
         <input
           ref={fileRef}
@@ -266,7 +283,7 @@ export default function TrayCount({
       {aiNote && !aiError && <p className="text-[11px] text-teal-700 mb-1">{aiNote}</p>}
       {overCapacity && (
         <p className="text-[11px] text-red-600 mb-1 flex items-center">
-          <AlertTriangle className="h-3 w-3 mr-1" /> More than a full tray ({vialsPerTray}). Double-check the count.
+          <AlertTriangle className="h-3 w-3 mr-1" /> More than a full tray ({capacity}). Double-check the count.
         </p>
       )}
 
@@ -282,15 +299,22 @@ export default function TrayCount({
           <input
             type="date"
             value={/^\d{4}-\d{2}-\d{2}$/.test(label.bud ?? '') ? label.bud : ''}
-            onChange={(e) => setLabel((l) => ({ ...l, bud: e.target.value || undefined }))}
+            onChange={(e) => setLabel((l) => ({ ...l, bud: e.target.value || '' }))}
             className="h-9 rounded-md border border-gray-300 px-2 text-sm"
             aria-label="Beyond-use date"
+          />
+          <input
+            type="date"
+            value={/^\d{4}-\d{2}-\d{2}$/.test(label.dateCompounded ?? '') ? label.dateCompounded : ''}
+            onChange={(e) => setLabel((l) => ({ ...l, dateCompounded: e.target.value || '' }))}
+            className="h-9 rounded-md border border-gray-300 px-2 text-sm"
+            aria-label="Date compounded"
           />
           <input
             value={label.labelText ?? ''}
             onChange={(e) => setLabel((l) => ({ ...l, labelText: e.target.value }))}
             placeholder="Label text (product / strength)"
-            className="h-9 rounded-md border border-gray-300 px-2 text-sm col-span-2"
+            className="h-9 rounded-md border border-gray-300 px-2 text-sm"
           />
           <Button variant="ghost" size="sm" className="col-span-2 h-8" onClick={() => setEditingLabel(false)}>
             Done
@@ -311,20 +335,28 @@ export default function TrayCount({
           <Tag className="h-3 w-3 shrink-0" />
           <span className="truncate">
             {hasLabel
-              ? [label.lotNumber ? `Lot ${label.lotNumber}` : null, budText, label.labelText]
-                  .filter(Boolean)
-                  .join(' · ')
+              ? [label.lotNumber ? `Lot ${label.lotNumber}` : null, budText, label.labelText].filter(Boolean).join(' · ')
               : 'No lot / BUD on file — tap to add (or use AI count with the label in frame)'}
           </span>
           <Pencil className="h-3 w-3 shrink-0 ml-auto" />
         </button>
       )}
 
-      <div className="mt-auto">
+      <div className="mt-auto flex items-center gap-2">
         <Button
-          className="w-full h-12 text-base bg-teal-600 hover:bg-teal-700 text-white"
+          variant="ghost"
+          size="sm"
+          className="h-12 px-2 text-gray-400 hover:text-red-600 shrink-0"
+          onClick={handleRemove}
+          disabled={removing || saving}
+          title="Tray is empty / taken out of this bin"
+        >
+          {removing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+        </Button>
+        <Button
+          className="flex-1 h-12 text-base bg-teal-600 hover:bg-teal-700 text-white"
           onClick={handleAccept}
-          disabled={saving}
+          disabled={saving || removing}
         >
           {saving ? <Loader2 className="h-5 w-5 animate-spin" /> : <><Check className="h-5 w-5 mr-2" /> Accept {count}</>}
         </Button>

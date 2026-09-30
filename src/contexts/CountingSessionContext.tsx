@@ -1,8 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { addDoc, collection, doc, getDocs, onSnapshot, query, updateDoc, where } from 'firebase/firestore';
+import { addDoc, collection, doc, getDoc, getDocs, onSnapshot, query, updateDoc, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from './AuthContext';
-import { parseTrayId } from '../lib/inventory';
+import { parseLegacyTrayId } from '../lib/inventory';
 
 export type ScanPrefix = 'SHELF' | 'BSKT' | 'TRAY' | 'UNKNOWN';
 
@@ -21,18 +21,24 @@ export interface SessionProgress {
   basketsCount: number;
 }
 
+/** Tray requested by a TRAY: scan; consumed (cleared) by the bottom panel once it opens the tray. */
+export interface PendingTray {
+  trayId: string | null;
+  /** Legacy v1.0.9 labels encoded a slot instead of a tray ID. */
+  slot: number | null;
+}
+
 interface CountingSessionContextValue {
   activeLocationId: string | null;
   activeShelfId: string | null;
   activeBasketId: string | null;
-  /** Slot requested by a TRAY: scan; consumed (cleared) by the bottom panel once it opens the tray. */
-  pendingTraySlot: number | null;
+  pendingTray: PendingTray | null;
   lastScan: ParsedScan | null;
   sessionId: string | null;
   sessionProgress: SessionProgress;
   setActiveLocationId: (id: string | null) => void;
   handleScan: (qrData: string) => void;
-  clearPendingTraySlot: () => void;
+  clearPendingTray: () => void;
   completeSession: () => Promise<void>;
 }
 
@@ -63,7 +69,7 @@ export function CountingSessionProvider({ children }: { children: React.ReactNod
   const [activeLocationId, setActiveLocationId] = useState<string | null>(null);
   const [activeShelfId, setActiveShelfId] = useState<string | null>(null);
   const [activeBasketId, setActiveBasketId] = useState<string | null>(null);
-  const [pendingTraySlot, setPendingTraySlot] = useState<number | null>(null);
+  const [pendingTray, setPendingTray] = useState<PendingTray | null>(null);
   const [lastScan, setLastScan] = useState<ParsedScan | null>(null);
 
   const { user } = useAuth();
@@ -156,7 +162,7 @@ export function CountingSessionProvider({ children }: { children: React.ReactNod
   }, []);
 
   const activateBasket = useCallback(
-    async (basketId: string, slot: number | null) => {
+    async (basketId: string, tray: PendingTray | null) => {
       const sid = await ensureSession();
       // Soft lock: warn when another live session is on the same bin.
       try {
@@ -175,7 +181,7 @@ export function CountingSessionProvider({ children }: { children: React.ReactNod
         console.error('Soft lock check failed', e);
       }
       setActiveBasketId(basketId);
-      setPendingTraySlot(slot);
+      setPendingTray(tray);
       if (sid) {
         updateDoc(doc(db, 'countingSessions', sid), { activeBasketId: basketId, status: 'active' }).catch(console.error);
       }
@@ -197,7 +203,7 @@ export function CountingSessionProvider({ children }: { children: React.ReactNod
         case 'SHELF': {
           setActiveShelfId(parsed.id);
           setActiveBasketId(null);
-          setPendingTraySlot(null);
+          setPendingTray(null);
           const sid = await ensureSession();
           if (sid) updateDoc(doc(db, 'countingSessions', sid), { activeBasketId: null }).catch(console.error);
           break;
@@ -206,12 +212,30 @@ export function CountingSessionProvider({ children }: { children: React.ReactNod
           await activateBasket(parsed.id, null);
           break;
         case 'TRAY': {
-          const tray = parseTrayId(parsed.id);
-          if (!tray) {
-            setLastScan({ prefix: 'UNKNOWN', id: parsed.id, raw: parsed.raw });
+          // Current labels encode the tray doc ID; resolve it to its bin.
+          try {
+            const snap = await getDoc(doc(db, 'trays', parsed.id));
+            if (snap.exists()) {
+              const data = snap.data();
+              if (data.status === 'removed') {
+                window.alert('This tray was marked as removed from its bin. Re-add it under Bins if it is back in service.');
+                break;
+              }
+              if (typeof data.basketId === 'string') {
+                await activateBasket(data.basketId, { trayId: parsed.id, slot: null });
+                break;
+              }
+            }
+          } catch (e) {
+            console.error('Tray lookup failed', e);
+          }
+          // Legacy v1.0.9 labels: TRAY:{basketId}-{slot}
+          const legacy = parseLegacyTrayId(parsed.id);
+          if (legacy) {
+            await activateBasket(legacy.basketId, { trayId: null, slot: legacy.slot });
             break;
           }
-          await activateBasket(tray.basketId, tray.slot);
+          setLastScan({ prefix: 'UNKNOWN', id: parsed.id, raw: parsed.raw });
           break;
         }
         default:
@@ -221,32 +245,32 @@ export function CountingSessionProvider({ children }: { children: React.ReactNod
     [activateBasket, ensureSession],
   );
 
-  const clearPendingTraySlot = useCallback(() => setPendingTraySlot(null), []);
+  const clearPendingTray = useCallback(() => setPendingTray(null), []);
 
   const value = useMemo<CountingSessionContextValue>(
     () => ({
       activeLocationId,
       activeShelfId,
       activeBasketId,
-      pendingTraySlot,
+      pendingTray,
       lastScan,
       sessionId,
       sessionProgress,
       setActiveLocationId,
       handleScan,
-      clearPendingTraySlot,
+      clearPendingTray,
       completeSession,
     }),
     [
       activeLocationId,
       activeShelfId,
       activeBasketId,
-      pendingTraySlot,
+      pendingTray,
       lastScan,
       sessionId,
       sessionProgress,
       handleScan,
-      clearPendingTraySlot,
+      clearPendingTray,
       completeSession,
     ],
   );

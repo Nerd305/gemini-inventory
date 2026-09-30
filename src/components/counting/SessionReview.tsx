@@ -1,19 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Download, CheckCircle, Upload, Loader2, ArrowLeft, AlertTriangle } from 'lucide-react';
-import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLocations } from '../../hooks/useLocations';
 import {
+  activeTrays,
   clampInt,
+  countedInSession,
   describeShelf,
+  fetchTraysForBasket,
   liveBasketTotal,
   syncProductStockFromBaskets,
   type BasketDoc,
   type StockSyncResult,
-  type TrayDoc,
-  type TrayMap,
 } from '../../lib/inventory';
 
 interface SessionReviewProps {
@@ -73,21 +74,13 @@ export function SessionReview({ sessionId, onComplete, onBack }: SessionReviewPr
               productNames.set(b.productId, b.productId);
             }
           }
-          const traysSnap = await getDocs(collection(db, 'baskets', basketId, 'trays'));
-          const trays: TrayMap = new Map();
+          const trays = await fetchTraysForBasket(basketId);
+          const active = activeTrays(trays);
           const lots = new Set<string>();
-          traysSnap.forEach((t) => {
-            const d = t.data() as TrayDoc;
-            if (typeof d.slot === 'number' && typeof d.count === 'number') trays.set(d.slot, d);
-          });
-          const trayCount = clampInt(b.trayCount);
           let traysCounted = 0;
-          for (let s = 1; s <= trayCount; s++) {
-            const t = trays.get(s);
-            if (t) {
-              traysCounted++;
-              if (t.lotNumber) lots.add(t.lotNumber);
-            }
+          for (const t of active) {
+            if (countedInSession(t, sessionId)) traysCounted++;
+            if (t.lotNumber) lots.add(t.lotNumber);
           }
           next.push({
             basketId,
@@ -95,10 +88,10 @@ export function SessionReview({ sessionId, onComplete, onBack }: SessionReviewPr
             productName: productNames.get(b.productId) ?? b.productId,
             binName: b.name,
             shelfId: b.shelfId ?? null,
-            trayCount,
+            trayCount: active.length,
             traysCounted,
             looseVials: clampInt(b.looseVials),
-            total: typeof b.totalVials === 'number' ? b.totalVials : liveBasketTotal(trays, trayCount, clampInt(b.looseVials)),
+            total: typeof b.totalVials === 'number' ? b.totalVials : liveBasketTotal(trays, clampInt(b.looseVials)),
             lots: Array.from(lots),
           });
         }

@@ -10,7 +10,8 @@ import { Plus, Loader2, Camera, Sparkles, Printer, Pencil, Trash2, Package, Filt
 import { analyzeProductImage } from '../lib/ai';
 import { LabelPrinter } from '../components/LabelPrinter';
 import { HelpTooltip } from '../components/HelpTooltip';
-import { basketTotal, describeShelf } from '../lib/inventory';
+import { basketTotal, describeShelf, fifoOrder, formatBud, budStatus, traysForProductQuery, trayRecordFromSnapshot, useFirstTrayId, type TrayRecord } from '../lib/inventory';
+import { Star } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
 interface Product {
@@ -34,6 +35,7 @@ export default function Products() {
   const [printData, setPrintData] = useState<{code: string, title: string, subtitle?: string} | null>(null);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [productBaskets, setProductBaskets] = useState<any[]>([]);
+  const [productTrays, setProductTrays] = useState<TrayRecord[]>([]);
   const [locationsMap, setLocationsMap] = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -86,9 +88,21 @@ export default function Products() {
         snapshot.forEach(doc => baskets.push({ id: doc.id, ...doc.data() }));
         setProductBaskets(baskets);
       });
-      return () => unsub();
+      const unsubTrays = onSnapshot(traysForProductQuery(editingProduct.id), (snapshot) => {
+        const trays: TrayRecord[] = [];
+        snapshot.forEach((d) => {
+          const t = trayRecordFromSnapshot(d.id, d.data());
+          if (t) trays.push(t);
+        });
+        setProductTrays(trays);
+      });
+      return () => {
+        unsub();
+        unsubTrays();
+      };
     } else {
       setProductBaskets([]);
+      setProductTrays([]);
     }
   }, [editingProduct]);
 
@@ -397,6 +411,45 @@ export default function Products() {
                     })}
                   </div>
                 )}
+              </div>
+
+              {/* FIFO: which tray to pull from first */}
+              <div className="space-y-2 pt-4 border-t">
+                <Label className="text-sm font-semibold text-gray-900 flex items-center">
+                  <Star className="h-4 w-4 mr-1 text-amber-500" /> Use first (by BUD)
+                  <HelpTooltip content="Every registered tray of this product across all bins, earliest beyond-use date first. Pull vials from the top tray." />
+                </Label>
+                {(() => {
+                  const ordered = fifoOrder(productTrays);
+                  const first = useFirstTrayId(productTrays);
+                  if (ordered.length === 0) {
+                    return <p className="text-sm text-gray-500 italic">No trays registered yet — add them from the bin under Bins, or run a count with the label in frame.</p>;
+                  }
+                  return (
+                    <div className="space-y-1 max-h-48 overflow-y-auto pr-2">
+                      {ordered.slice(0, 8).map((t) => {
+                        const bin = productBaskets.find((b) => b.id === t.basketId);
+                        const status = budStatus(t.bud);
+                        return (
+                          <div key={t.id} className={`flex items-center justify-between rounded border px-2 py-1.5 text-sm ${first === t.id ? 'border-amber-300 bg-amber-50' : 'bg-gray-50'}`}>
+                            <div className="min-w-0">
+                              <p className="font-medium text-gray-900 truncate">
+                                {first === t.id && <span className="mr-1 rounded bg-amber-500 px-1 py-0.5 text-[9px] font-bold text-white">USE FIRST</span>}
+                                {bin?.name || 'Bin'} · Tray {t.slot}
+                              </p>
+                              <p className="text-xs text-gray-500 truncate">
+                                {t.lotNumber ? `Lot ${t.lotNumber}` : 'no lot'}{t.bud ? ` · BUD ${formatBud(t.bud)}` : ' · no BUD'}
+                                {status === 'expired' ? ' · EXPIRED' : status === 'soon' ? ' · soon' : ''}
+                              </p>
+                            </div>
+                            <span className={`font-bold tabular-nums ml-2 ${status === 'expired' ? 'text-red-600' : 'text-teal-700'}`}>{t.countedAt ? t.count : '—'}</span>
+                          </div>
+                        );
+                      })}
+                      {ordered.length > 8 && <p className="text-xs text-gray-400">+{ordered.length - 8} more trays</p>}
+                    </div>
+                  );
+                })()}
               </div>
 
               <DialogFooter className="flex justify-between items-center sm:justify-between pt-4">
