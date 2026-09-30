@@ -32,6 +32,7 @@ import {
 import { APP_VERSION } from '../lib/version';
 import { AiStats, loadAiStats } from '../lib/learning';
 import { HelpTooltip } from '../components/HelpTooltip';
+import { OPEN_QUICKSTART_EVENT } from '../components/docs/QuickStartDialog';
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -340,12 +341,20 @@ export default function Settings() {
         <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
       </div>
 
-      {/* Pages that don't fit in the phone bottom bar. */}
-      <Card className="sm:hidden">
+      {/* Help + pages that don't fit in the phone bottom bar. */}
+      <Card>
         <CardContent className="p-3 grid grid-cols-2 gap-2">
-          <a href="/locations" className="rounded-md border px-3 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50">Locations & shelves</a>
-          <a href="/reports" className="rounded-md border px-3 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50">Reports</a>
-          <a href="/print-station" className="rounded-md border px-3 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50">Print Station</a>
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new Event(OPEN_QUICKSTART_EVENT))}
+            className="rounded-md border border-teal-200 bg-teal-50 px-3 py-2 text-left text-sm font-medium text-teal-900 hover:bg-teal-100"
+          >
+            Quick start guide
+          </button>
+          <a href="/api-docs" className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-900 hover:bg-blue-100">Reporting API</a>
+          <a href="/locations" className="rounded-md border px-3 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50 sm:hidden">Locations & shelves</a>
+          <a href="/reports" className="rounded-md border px-3 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50 sm:hidden">Reports</a>
+          <a href="/print-station" className="rounded-md border px-3 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50 sm:hidden">Print Station</a>
           <a href="/scan" className="rounded-md border px-3 py-2 text-sm font-medium text-gray-500 hover:bg-gray-50">Legacy scanner</a>
         </CardContent>
       </Card>

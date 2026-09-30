@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from './ui/button';
-import { LayoutDashboard, ScanLine, Package, MapPin, BarChart3, LogOut, Printer, Wifi, Settings as SettingsIcon, Boxes } from 'lucide-react';
+import { LayoutDashboard, ScanLine, Package, MapPin, BarChart3, LogOut, Printer, Wifi, Settings as SettingsIcon, Boxes, Code2, HelpCircle } from 'lucide-react';
+import QuickStartDialog, { useQuickStartDialog } from './docs/QuickStartDialog';
 import { cn } from '../lib/utils';
 import { APP_VERSION } from '../lib/version';
 import { collection, getDocs, query, limit } from 'firebase/firestore';
@@ -12,6 +13,7 @@ export default function Layout() {
   const { logOut, user } = useAuth();
   const location = useLocation();
   const [isPinging, setIsPinging] = useState(false);
+  const [quickStartOpen, setQuickStartOpen] = useQuickStartDialog();
 
   const handlePing = async () => {
     setIsPinging(true);
@@ -36,6 +38,7 @@ export default function Layout() {
     { name: 'Locations', shortName: 'Places', path: '/locations', icon: MapPin, mobile: false },
     { name: 'Reports', shortName: 'Stats', path: '/reports', icon: BarChart3, mobile: false },
     { name: 'Print Station', shortName: 'Print', path: '/print-station', icon: Printer, mobile: false },
+    { name: 'API', shortName: 'API', path: '/api-docs', icon: Code2, mobile: false },
     { name: 'Settings', shortName: 'More', path: '/settings', icon: SettingsIcon, mobile: true },
   ];
   const mobileNavItems = navItems.filter((item) => item.mobile);
@@ -55,6 +58,9 @@ export default function Layout() {
                 {isPinging ? 'Pinging...' : 'Test DB'}
               </Button>
               <span className="text-sm text-gray-500 hidden sm:block">{user?.email}</span>
+              <Button variant="ghost" size="icon" onClick={() => setQuickStartOpen(true)} title="Quick start guide" aria-label="Quick start guide">
+                <HelpCircle className="h-5 w-5" />
+              </Button>
               <Button variant="ghost" size="icon" onClick={logOut} title="Log out">
                 <LogOut className="h-5 w-5" />
               </Button>
@@ -66,6 +72,9 @@ export default function Layout() {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:pb-8">
         <Outlet />
       </main>
+
+      {/* First-launch quick start; reopened from the ? button or Settings. */}
+      <QuickStartDialog open={quickStartOpen} onOpenChange={setQuickStartOpen} />
 
       {/* Mobile Navigation */}
       <nav className="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t flex justify-around px-1 pt-2 pb-safe z-10">

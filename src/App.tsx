@@ -19,6 +19,7 @@ import PrintStation from './pages/PrintStation';
 import Settings from './pages/Settings';
 import CountSession from './pages/CountSession';
 import Bins from './pages/Bins';
+import ApiDocs from './pages/ApiDocs';
 import Layout from './components/Layout';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -82,6 +83,7 @@ export default function App() {
             <Route path="reports" element={<Reports />} />
             <Route path="print-station" element={<PrintStation />} />
             <Route path="settings" element={<Settings />} />
+            <Route path="api-docs" element={<ApiDocs />} />
           </Route>
         </Routes>
       </Router>

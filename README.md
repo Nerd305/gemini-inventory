@@ -9,8 +9,8 @@ an API or as a spreadsheet.
 
 | I want to… | Read |
 | --- | --- |
-| Use the app (setup, counting, FIFO, printing, exports) | **[docs/QUICKSTART.md](docs/QUICKSTART.md)** |
-| Pull counts / stock into another system | [docs/API.md](docs/API.md) |
+| Use the app (setup, counting, FIFO, printing, exports) | **[docs/QUICKSTART.md](docs/QUICKSTART.md)** — also pops up on first launch and behind the **?** button in the app |
+| Pull counts / stock into another system | [docs/API.md](docs/API.md) — also the **API** page in the app (any signed-in user) |
 | Install the label print server on the iMac | [desktop/README.md](desktop/README.md) and the section below |
 | Understand the code before changing it | [CLAUDE.md](CLAUDE.md) (architecture notes), [TASKS.md](TASKS.md) (open items) |
 
