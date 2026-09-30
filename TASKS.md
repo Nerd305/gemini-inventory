@@ -8,6 +8,8 @@ Tier numbers match the audit framing: lower tier = higher severity.
 
 ## Recently shipped
 
+- **v1.0.15** — `isValidConfig` now accepts `serverTimestamp()` and partial merge writes (saving the API key / fridges from Settings was rejected by the rules; AI Studio's import agent found and deployed the same fix). Vite dev server declares `allowedHosts: true` for the AI Studio preview proxy; `.env.example` trimmed to build-time vars so AI Studio stops prompting for server-only ones.
+
 - **v1.0.14** — Legacy-data repair (`src/lib/repair.ts` + Bins banner) for documents written by the April prototype that today's rules reject; factory reset now clears `trays` and `countingSessions` too.
 
 - **v1.0.13** — Docs inside the app. `/api-docs` page (base URL, health check, key status for admins, copy-curl per endpoint, full `docs/API.md` rendered) reachable by any signed-in user and from the desktop sidebar "API" item + Settings. `docs/QUICKSTART.md` pops up on first launch, behind the header **?** button, and from Settings; both markdown files are bundled with Vite `?raw` and rendered by react-markdown + remark-gfm (lazy chunks). Single source of truth stays in `docs/` on GitHub.

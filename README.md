@@ -129,6 +129,16 @@ The dashboard shows a **Setup progress** checklist that walks through: fridges (
   from **Settings → API Bridge**. See [docs/API.md](docs/API.md).
 - `POST /api/webhook/sale` lets the ordering system decrement stock (needs the bridge enabled).
 
+## server.js variables (all optional)
+
+| Variable | When to set it |
+| --- | --- |
+| `FIRESTORE_DATABASE_ID` | Only to override the database from `firebase-applet-config.json`. Leave unset. |
+| `VIALTRACK_API_KEY` | Only if you want the reporting API key to come from the environment instead of Settings → API Bridge. |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Local runs of `node server.js` only (path to a service-account JSON). Never on Cloud Run, which supplies credentials itself. |
+
+If AI Studio asks for these when importing the repo, leave the values blank.
+
 ## Development notes
 
 - `npm run lint` is a `tsc --noEmit` type-check; there is no test suite. CI (`.github/workflows/ci.yml`)

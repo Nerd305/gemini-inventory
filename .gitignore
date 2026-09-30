@@ -15,3 +15,7 @@ firebase-debug.log
 # Local service-account keys
 *service-account*.json
 serviceAccountKey.json
+
+# AI Studio workspace artifacts
+bun.lock
+bun.lockb

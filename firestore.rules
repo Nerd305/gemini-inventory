@@ -135,10 +135,14 @@ service cloud.firestore {
              request.resource.data.createdAt is string;
     }
 
+    // config/appSettings is written with setDoc(merge: true) and updatedAt: serverTimestamp(), so
+    // every field is optional (a partial first write must pass) and updatedAt may be a timestamp.
     function isValidConfig() {
-      return hasRequiredFields(['fridges']) &&
-             request.resource.data.fridges is list &&
-             (!request.resource.data.keys().hasAny(['updatedAt']) || request.resource.data.updatedAt is string) &&
+      return (!request.resource.data.keys().hasAny(['fridges']) || request.resource.data.fridges is list) &&
+             (!request.resource.data.keys().hasAny(['hudEnabled']) || request.resource.data.hudEnabled is bool) &&
+             (!request.resource.data.keys().hasAny(['capColorMap']) || request.resource.data.capColorMap is map) &&
+             (!request.resource.data.keys().hasAny(['apiBridgeConfig']) || request.resource.data.apiBridgeConfig is map) &&
+             (!request.resource.data.keys().hasAny(['updatedAt']) || request.resource.data.updatedAt is timestamp || request.resource.data.updatedAt is string) &&
              (!request.resource.data.keys().hasAny(['updatedBy']) || request.resource.data.updatedBy is string);
     }
 
