@@ -4,7 +4,7 @@ Read-only JSON/CSV endpoints served by `server.js` (the same process that hosts 
 business system, a spreadsheet, or a script can pull the current inventory and the count history
 without touching Firestore directly.
 
-Base URL: your Cloud Run URL, e.g. `https://vialtrack-ai-156214809618.us-west1.run.app`
+Base URL: the Cloud Run URL shown after Deploy (the address you open the app at), e.g. `https://<your-service>.run.app`
 
 ## Authentication
 
@@ -37,7 +37,7 @@ All timestamps are ISO 8601 strings in UTC. Dates on tray labels (`bud`, `dateCo
 ## Examples
 
 ```bash
-API=https://vialtrack-ai-156214809618.us-west1.run.app
+API=https://<your-service>.run.app    # the URL you open the app at
 KEY='paste the API key from Settings'
 
 # Is it up?
