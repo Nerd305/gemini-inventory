@@ -14,7 +14,7 @@ an API or as a spreadsheet.
 | Install the label print server on the iMac | [desktop/README.md](desktop/README.md) and the section below |
 | Understand the code before changing it | [CLAUDE.md](CLAUDE.md) (architecture notes), [TASKS.md](TASKS.md) (open items) |
 
-Live app: the Cloud Run URL shown after Deploy in AI Studio. (The earlier service at `vialtrack-ai-156214809618.us-west1.run.app` is retired and still serves v1.0.2.)
+Live app: https://blu35inventory-156214809618.us-west1.run.app (Cloud Run service `blu35inventory`, us-west1, deployed from the AI Studio project imported from this repo). The earlier `vialtrack-ai` service is retired.
 
 ## What is in this repository
 
@@ -83,7 +83,7 @@ The repo has a multi-stage `Dockerfile`; nothing deploys automatically from `mai
 - **gcloud** from a checkout of `main` with `.env.local` present:
 
   ```bash
-  gcloud run deploy <service-name> --source . --region <region> --project gen-lang-client-0920383400   # name + region from the Cloud Run console
+  gcloud run deploy blu35inventory --source . --region us-west1 --project gen-lang-client-0920383400
   ```
 
 Confirm the deploy took: the version badge next to "VialTrack AI" on the login page matches
