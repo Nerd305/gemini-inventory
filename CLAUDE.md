@@ -43,7 +43,9 @@ npm run package  # electron-builder → dist/packaged/*.dmg
 npm run lint     # tsc --noEmit for both main & renderer tsconfigs
 ```
 
-There is no test suite and no single-test command — `lint` is the primary automated check for both apps.
+There is no test suite and no single-test command — `lint` is the primary automated check for both apps. [.github/workflows/ci.yml](.github/workflows/ci.yml) runs web lint + build + `node --check server.js` and desktop lint on pushes to `main` and on pull requests.
+
+User-facing docs live in `docs/`: [QUICKSTART.md](docs/QUICKSTART.md) (staff/tester guide, includes a testing checklist and the tuning-knob map) and [API.md](docs/API.md).
 
 ## Environment & config
 
@@ -61,14 +63,18 @@ Routes are declared in [src/App.tsx](src/App.tsx). `/count` is full-screen (outs
 
 - **/bins** ([src/pages/Bins.tsx](src/pages/Bins.tsx)) — create/edit bins (product, fridge, shelf, trays, vials/tray, loose), grouped fridge → shelf, last-counted staleness, bin detail with per-tray counts and lot/BUD, bin QR label and batch tray labels.
 - **/locations** — fridges/cabinets with `shelfCount`; "Shelf labels" prints/batches `SHELF:` codes.
-- **/** (Dashboard) — [SetupGuide](src/components/SetupGuide.tsx) checklist (fridges → shelf labels → products → bins → bin labels → first count → Complete & Sync; detected from Firestore, label steps can be ticked by hand, hides itself when done or dismissed via localStorage), the "Today's Count" coverage card (bins finished today, vials on hand, bins not counted in 7 days) and live sessions from the last 24h. Setup pages show a one-line [NextStepHint](src/components/NextStepHint.tsx) pointing at the next stage; `/count` tells first-time users to set up bins when none exist.
+- **/reports** — movement charts plus the **Exports** card ([src/lib/exports.ts](src/lib/exports.ts)): 6-sheet .xlsx via `exceljs` (dynamically imported, browser build) or per-table CSV; tables are Summary, Products, Bins, Trays (use-first order), Count history, Sessions.
+- **/** (Dashboard) — [SetupGuide](src/components/SetupGuide.tsx) checklist (fridges → printing → shelf labels → products → bins → bin labels → first count → Complete & Sync; detected from Firestore, label steps can be ticked by hand, hides itself when done or dismissed via localStorage), the "Today's Count" coverage card (bins finished today, vials on hand, bins not counted in 7 days) and live sessions from the last 24h. Setup pages show a one-line [NextStepHint](src/components/NextStepHint.tsx) pointing at the next stage; `/count` tells first-time users to set up bins when none exist.
 
-## Web server / webhook backend ([server.js](server.js))
+## Web server / API backend ([server.js](server.js))
 
-`server.js` is a small Express app that does two jobs in a single process:
+`server.js` is a small Express app that does three jobs in a single process:
 
-1. **Static SPA host** — serves the Vite build (`dist/`) with a SPA fallback for React Router.
-2. **Inbound API bridge** — `POST /api/webhook/sale` decrements product stock when an external ordering system reports a sale. Reads `apiBridgeConfig` from `config/appSettings`, validates `Authorization: Bearer <apiKey>`, then runs a Firestore transaction that updates `products/{id}.currentStock` and writes an `inventoryLogs` entry with `userId: 'system'`.
+1. **Static SPA host** — serves the Vite build (`dist/`) with a SPA fallback for React Router. Unknown `/api/*` routes return JSON 404 instead of the SPA.
+2. **Inbound API bridge** — `POST /api/webhook/sale` decrements product stock when an external ordering system reports a sale (requires `apiBridgeConfig.enabled`). Runs a Firestore transaction that updates `products/{id}.currentStock` and writes an `inventoryLogs` entry with `userId: 'system'`.
+3. **Read-only reporting API** — `GET /api/v1/{health,summary,products,bins,trays,counts,sessions,sessions/:id,export.csv}`; documented in [docs/API.md](docs/API.md). Rows are built from full collection reads (5k cap) and decorated with product/location/user names; trays come back in FIFO order with `fifoRank`.
+
+Auth for 2 and 3: `Authorization: Bearer <key>` where key = `VIALTRACK_API_KEY` env or `config/appSettings.apiBridgeConfig.apiKey` (timing-safe compare, 30 s settings cache). **The server must open the named database**: it reads `firestoreDatabaseId` from `firebase-applet-config.json` (copied into the image by the Dockerfile) or `FIRESTORE_DATABASE_ID`; `getFirestore()` without an ID would hit the empty `(default)` database.
 
 Listens on `process.env.PORT || 8080`. Initialized via `firebase-admin` using ADC — locally set `GOOGLE_APPLICATION_CREDENTIALS` to a service-account key, on Cloud Run / GCE the metadata server provides it automatically.
 

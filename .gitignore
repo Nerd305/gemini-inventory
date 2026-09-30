@@ -7,3 +7,11 @@ coverage/
 .env*
 !.env.example
 .vercel
+
+# Firebase CLI
+.firebase/
+firebase-debug.log
+
+# Local service-account keys
+*service-account*.json
+serviceAccountKey.json

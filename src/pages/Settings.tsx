@@ -946,62 +946,51 @@ export default function Settings() {
       )}
 
       {isAdmin && (
-        <Card className="border-blue-100 bg-blue-50/30">
+          <Card className="border-blue-200 bg-blue-50/40">
           <CardHeader>
-            <CardTitle className="text-blue-800 text-lg">API Documentation (White Paper)</CardTitle>
+            <CardTitle className="text-blue-800 text-lg">API &amp; Integrations</CardTitle>
             <CardDescription className="text-blue-700/80">
-              Technical details for integrating the API Bridge.
+              One API key (set above) protects everything below. Full reference: <code>docs/API.md</code> in the repository.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4 text-sm text-gray-700">
             <div>
-              <h3 className="font-semibold text-gray-900 mb-1">1. Outbound Webhooks (Push)</h3>
-              <p className="mb-2">When inventory changes in VialTrack, a POST request is sent to your configured <strong>Webhook URL</strong>. You must respond with a 2xx status code.</p>
+              <h3 className="font-semibold text-gray-900 mb-1">1. Reporting API (read-only, for the business)</h3>
+              <p className="mb-2">Pull the current inventory and the count history as JSON or CSV. Send <code>Authorization: Bearer &lt;API key&gt;</code>.</p>
               <pre className="bg-gray-900 text-gray-100 p-3 rounded-md overflow-x-auto">
-{`POST /your-webhook-endpoint
-Headers:
-  Content-Type: application/json
-  Authorization: Bearer <Your API Key>
-
-Body:
-{
-  "productId": "string",
-  "newStock": number,
-  "source": "vialtrack",
-  "timestamp": "ISO 8601 Date"
-}`}
+{`GET /api/v1/health                 liveness (no auth)
+GET /api/v1/summary                totals: products, bins, vials, expiring trays
+GET /api/v1/products               stock + reorder point per product
+GET /api/v1/bins                   every bin with fridge / shelf / total vials / last count
+GET /api/v1/trays                  lot, BUD, days to BUD, use-first rank (FIFO)
+      ?productId= &binId= &status=active|removed|all &expiringWithinDays=30
+GET /api/v1/counts?since=&until=   stock reconciliations from Complete & Sync
+GET /api/v1/sessions               counting sessions; /api/v1/sessions/:id for detail
+GET /api/v1/export.csv?table=      products | bins | trays | counts | sessions`}
+              </pre>
+              <pre className="bg-gray-900 text-gray-100 p-3 rounded-md overflow-x-auto mt-2">
+{`curl -H "Authorization: Bearer \${API_KEY}" \\
+  "https://<your-app-url>/api/v1/trays?expiringWithinDays=30"`}
               </pre>
             </div>
-            
+
             <div className="pt-4 border-t border-blue-100">
-              <h3 className="font-semibold text-gray-900 mb-1">2. Inbound Webhooks (Pull)</h3>
-              <p className="mb-2">Your external POS or Pharmacy Management System can decrement stock by sending a POST request to our API Server.</p>
+              <h3 className="font-semibold text-gray-900 mb-1">2. Inbound sale webhook (ordering system → VialTrack)</h3>
+              <p className="mb-2">Requires the bridge to be <strong>enabled</strong> above. Decrements a product's stock and writes a SALE log entry.</p>
               <pre className="bg-gray-900 text-gray-100 p-3 rounded-md overflow-x-auto">
 {`POST /api/webhook/sale
-Headers:
-  Content-Type: application/json
-  Authorization: Bearer <Your API Key>
+Authorization: Bearer <API key>
+Content-Type: application/json
 
-Body:
-{
-  "productId": "string",
-  "quantityRemoved": number,
-  "orderId": "string (optional)"
-}`}
+{ "productId": "string", "quantityRemoved": number, "orderId": "string (optional)" }`}
               </pre>
             </div>
-            
+
             <div className="pt-4 border-t border-blue-100">
-              <h3 className="font-semibold text-gray-900 mb-1">cURL Example (Inbound)</h3>
+              <h3 className="font-semibold text-gray-900 mb-1">3. Outbound push (VialTrack → your webhook URL)</h3>
+              <p className="mb-2">When stock changes in the legacy scanner, a POST is sent to the Webhook URL above. Respond with a 2xx.</p>
               <pre className="bg-gray-900 text-gray-100 p-3 rounded-md overflow-x-auto">
-{`curl -X POST http://your-server-url/api/webhook/sale \\
-  -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer \${API_KEY}" \\
-  -d '{
-    "productId": "some-product-id",
-    "quantityRemoved": 1,
-    "orderId": "RX-12345"
-  }'`}
+{`{ "productId": "string", "newStock": number, "source": "vialtrack", "timestamp": "ISO 8601" }`}
               </pre>
             </div>
           </CardContent>

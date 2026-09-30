@@ -15,7 +15,7 @@ import { clampInt, type BasketDoc } from '../lib/inventory';
  * "Print Locally" never creates a printJobs doc.
  */
 
-export type SetupStepId = 'fridge' | 'shelfLabels' | 'products' | 'bins' | 'binLabels' | 'count' | 'sync';
+export type SetupStepId = 'fridge' | 'printing' | 'shelfLabels' | 'products' | 'bins' | 'binLabels' | 'count' | 'sync';
 
 interface SetupStep {
   id: SetupStepId;
@@ -26,6 +26,7 @@ interface SetupStep {
   done: boolean;
   /** Step can be ticked manually (detection is best-effort). */
   manual?: boolean;
+  manualLabel?: string;
 }
 
 const STORAGE_KEY = 'vialtrack.setupGuide.v1';
@@ -58,6 +59,11 @@ async function hasPrintJobWithPrefix(prefix: string): Promise<boolean> {
   return !snap.empty;
 }
 
+async function hasCompletedPrintJob(): Promise<boolean> {
+  const snap = await getDocs(query(collection(db, 'printJobs'), where('status', '==', 'completed'), limit(1)));
+  return !snap.empty;
+}
+
 async function hasCountLog(): Promise<boolean> {
   const snap = await getDocs(query(collection(db, 'inventoryLogs'), where('action', '==', 'COUNT'), limit(1)));
   return !snap.empty;
@@ -72,16 +78,16 @@ interface SetupGuideProps {
 
 export default function SetupGuide({ bins, productCount, ready, onHide }: SetupGuideProps) {
   const { locations } = useLocations();
-  const [signals, setSignals] = useState({ shelfPrinted: false, binPrinted: false, synced: false });
+  const [signals, setSignals] = useState({ shelfPrinted: false, binPrinted: false, synced: false, printed: false });
   const [manual, setManual] = useState<Partial<Record<SetupStepId, boolean>>>(() => readSetupGuideStore().manual ?? {});
 
   // Best-effort detection of label printing and the first synced count. Re-checked whenever the
   // upstream counts change (e.g. the user comes back to the dashboard after printing).
   useEffect(() => {
     let cancelled = false;
-    Promise.all([hasPrintJobWithPrefix('SHELF:'), hasPrintJobWithPrefix('BSKT:'), hasCountLog()])
-      .then(([shelfPrinted, binPrinted, synced]) => {
-        if (!cancelled) setSignals({ shelfPrinted, binPrinted, synced });
+    Promise.all([hasPrintJobWithPrefix('SHELF:'), hasPrintJobWithPrefix('BSKT:'), hasCountLog(), hasCompletedPrintJob()])
+      .then(([shelfPrinted, binPrinted, synced, printed]) => {
+        if (!cancelled) setSignals({ shelfPrinted, binPrinted, synced, printed });
       })
       .catch((err) => console.error('Setup guide detection failed', err));
     return () => {
@@ -106,6 +112,17 @@ export default function SetupGuide({ bins, productCount, ready, onHide }: SetupG
         to: '/locations',
         cta: 'Go to Locations',
         done: locations.length > 0,
+      },
+      {
+        id: 'printing',
+        title: 'Set up label printing',
+        detail:
+          'Labels print through the Print Station. Either install the VialTrack Print Server on the iMac connected to the label printers (desktop/ folder in the repo; see README), or keep the Print Station page open in a browser on that computer. Then hit "Send Test Print" on the Print Station page and check a label comes out.',
+        to: '/print-station',
+        cta: 'Open Print Station',
+        done: Boolean(manual.printing) || signals.printed,
+        manual: true,
+        manualLabel: 'Test print worked',
       },
       {
         id: 'shelfLabels',
@@ -223,7 +240,7 @@ export default function SetupGuide({ bins, productCount, ready, onHide }: SetupG
                       </Button>
                       {step.manual && (
                         <Button variant="outline" size="sm" onClick={() => markDone(step.id)}>
-                          Already printed
+                          {step.manualLabel ?? 'Already printed'}
                         </Button>
                       )}
                     </div>

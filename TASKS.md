@@ -8,6 +8,8 @@ Tier numbers match the audit framing: lower tier = higher severity.
 
 ## Recently shipped
 
+- **v1.0.12** — Handoff package. Read-only reporting API in `server.js` (`/api/v1/…` JSON + CSV, bearer key from Settings → API Bridge; fixed the server opening the `(default)` database instead of the named one). Reports → Exports (6-sheet .xlsx via exceljs, per-table CSV). Setup checklist gained a "Set up label printing" step. New README, `docs/QUICKSTART.md`, `docs/API.md`, CI workflow; removed the dead root prototype `gemini-inventory.jsx` (it carried a hard-coded config for an unrelated Firebase project).
+
 - **v1.0.11** — Tray identity + FIFO. Trays moved from `baskets/{id}/trays/slot-N` to a top-level `trays` collection with stable IDs, `status` (soft remove), and lot / BUD / date-compounded fields that travel with the physical tray. Tray QR labels now encode `TRAY:{trayId}` and print lot + BUD; scanning one opens that exact tray. "Use first" ordering (earliest BUD) shows in the bin detail, the count grid (1st badge), the product dialog, and a dashboard "Use First · Expiring BUDs" card. Bins detail gained Add tray (with AI label read via `readCompoundingLabel`), edit lot/BUD, remove, per-tray label print. Legacy slot docs migrate on first open (`migrateLegacyTrays`). Count progress is now per session (`tray.sessionId`).
 
 - **v1.0.10** — In-app setup progression. Dashboard `SetupGuide` checklist (fridges → shelf labels → products → bins → bin labels → first count → Complete & Sync) with Firestore-based detection, manual "Already printed" for label steps, and hide/show; `NextStepHint` strips on Locations and Bins; `/count` nudges to set up bins when the `baskets` collection is empty. See [src/components/SetupGuide.tsx](src/components/SetupGuide.tsx).
@@ -70,7 +72,14 @@ These are the "use the data, not just collect it" follow-ups from the AI Perform
 
 - [ ] **Resume a paused session** — sessions are marked `paused` on exit when bins were counted, but there is no way to pick one back up; the dashboard hides them after 24h. Either add resume or mark them `abandoned` too.
 - [x] **Tray identity vs. slot** — done in v1.0.11 (`trays` collection). `moveTray()` exists in inventory.ts but has no UI yet (scan a tray label while a different bin is open → offer "move here").
-- [x] **BUD report** — dashboard "Use First · Expiring BUDs" card (v1.0.11) reads `trays where status == active` client-side; a Reports page version with CSV export is still open.
+- [x] **BUD report** — dashboard "Use First · Expiring BUDs" card (v1.0.11); Trays sheet in the Reports export and `/api/v1/trays?expiringWithinDays=` (v1.0.12).
 - [ ] **`appSettings.fridges` vs `locations.shelfCount`** — two layout configs. Nothing reads `appSettings.fridges` in the count flow; migrate the Settings UI to edit `locations` and drop `FridgeConfig`.
 - [x] **Stale tray docs beyond `trayCount`** — obsolete: trays are soft-removed (`status: removed`) and `trayCount` is derived from active trays (v1.0.11). Legacy `baskets/{id}/trays` subcollections can be deleted by an admin once every bin shows `migratedTraysAt`.
 - [ ] **Learning samples from the tray label** — `learningData` stores only the count; store the AI's label transcription vs. the user's correction to measure OCR accuracy too.
+
+## Handoff follow-ups (v1.0.12)
+
+- [ ] **API pagination** — `/api/v1` reads whole collections (5k cap). Add cursor pagination before any dashboard polls it frequently.
+- [ ] **Separate read-only API key** — the reporting API shares the bridge key; a second, read-only key would let the business pull data without being able to post sales.
+- [ ] **Legacy `/scan` removal** — once the tester confirms nobody needs Reassign / Guided flows, delete `src/pages/Scanner.tsx` and the outbound push in `src/lib/apibridge.ts`.
+- [ ] **Move tray UI** — `moveTray()` exists; scanning a tray label while a different bin is open should offer "move this tray here".

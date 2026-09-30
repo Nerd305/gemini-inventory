@@ -12,7 +12,7 @@ WORKDIR /app
 COPY package*.json ./
 # Only install production dependencies
 RUN npm ci --omit=dev
-COPY server.js .
+COPY server.js firebase-applet-config.json ./
 COPY --from=build /app/dist ./dist
 EXPOSE 8080
 CMD ["node", "server.js"]
