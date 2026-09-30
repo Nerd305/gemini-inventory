@@ -49,7 +49,7 @@ export default function Layout() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
             <div className="flex items-center">
-              <span className="text-xl font-bold text-blue-600">MedInventory</span>
+              <span className="text-xl font-bold text-blue-600">VialTrack AI</span>
               <span className="ml-2 text-[10px] font-mono bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">v{APP_VERSION}</span>
             </div>
             <div className="flex items-center space-x-2 sm:space-x-4">

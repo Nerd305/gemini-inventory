@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Two independent applications share one Firestore database and a `src/shared/` code folder:
 
-- **Root (`/`)** — React 19 + Vite + Tailwind 4 web app (MedInventory / VialTrack), packaged into a Node container that also runs an Express webhook backend. Built for Google AI Studio; uses Gemini via `@google/genai` and Firebase Auth + Firestore.
+- **Root (`/`)** — React 19 + Vite + Tailwind 4 web app (VialTrack AI, formerly MedInventory), packaged into a Node container that also runs an Express webhook backend. Built for Google AI Studio; uses Gemini via `@google/genai` and Firebase Auth + Firestore.
 - **`desktop/`** — Electron + Vite + TypeScript macOS print server (VialTrack Print Server). Runs on the pharmacy iMac, subscribes to the Firestore `printJobs` queue, and routes each job to a physical printer via CUPS (`lp`).
 
 The desktop renderer imports shared types and the `usePrintJobQueue` hook from the root via Vite aliases:

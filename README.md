@@ -1,4 +1,4 @@
-# VialTrack · MedInventory
+# VialTrack AI
 
 Physical inventory for a compounding pharmacy fridge, built for phones and an iMac label station.
 
@@ -86,7 +86,7 @@ The repo has a multi-stage `Dockerfile`; nothing deploys automatically from `mai
   gcloud run deploy <service-name> --source . --region <region> --project gen-lang-client-0920383400   # name + region from the Cloud Run console
   ```
 
-Confirm the deploy took: the version badge next to "MedInventory" on the login page matches
+Confirm the deploy took: the version badge next to "VialTrack AI" on the login page matches
 `package.json`, and `GET /api/v1/health` returns the same version.
 
 ### 5. Label printing (iMac print server)

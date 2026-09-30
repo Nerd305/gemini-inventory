@@ -52,7 +52,7 @@ function Login() {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl font-bold flex items-center justify-center">
-            MedInventory
+            VialTrack AI
             <span className="ml-2 text-[10px] font-mono bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">v{APP_VERSION}</span>
           </CardTitle>
           <CardDescription>Sign in to manage medication inventory</CardDescription>

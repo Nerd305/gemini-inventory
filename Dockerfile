@@ -11,7 +11,7 @@ FROM node:22-alpine
 WORKDIR /app
 COPY package*.json ./
 # Only install production dependencies
-RUN npm ci --omit=dev
+RUN if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi
 COPY server.js firebase-applet-config.json ./
 COPY --from=build /app/dist ./dist
 EXPOSE 8080

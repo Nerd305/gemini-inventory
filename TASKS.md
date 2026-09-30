@@ -8,7 +8,7 @@ Tier numbers match the audit framing: lower tier = higher severity.
 
 ## Recently shipped
 
-- **v1.0.15** — `isValidConfig` now accepts `serverTimestamp()` and partial merge writes (saving the API key / fridges from Settings was rejected by the rules; AI Studio's import agent found and deployed the same fix). Vite dev server declares `allowedHosts: true` for the AI Studio preview proxy; `.env.example` trimmed to build-time vars so AI Studio stops prompting for server-only ones.
+- **v1.0.15** — `isValidConfig` now accepts `serverTimestamp()` and partial merge writes (saving the API key / fridges from Settings was rejected by the rules; AI Studio's import agent found and deployed the same fix). Vite dev server declares `allowedHosts: true` for the AI Studio preview proxy; `.env.example` trimmed to build-time vars so AI Studio stops prompting for server-only ones. Merged the AI Studio workspace commit (rename to VialTrack AI, `metadata.json` capabilities): restored the two `package-lock.json` files it deleted, finished the rename on the login screen and header, and made the Dockerfile fall back to `npm install` when a lockfile is missing.
 
 - **v1.0.14** — Legacy-data repair (`src/lib/repair.ts` + Bins banner) for documents written by the April prototype that today's rules reject; factory reset now clears `trays` and `countingSessions` too.
 

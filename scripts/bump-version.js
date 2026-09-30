@@ -20,7 +20,7 @@ function bump() {
   // Keep the browser tab title in step with the badge shown in the UI.
   if (fs.existsSync(indexHtmlPath)) {
     const html = fs.readFileSync(indexHtmlPath, 'utf8');
-    fs.writeFileSync(indexHtmlPath, html.replace(/<title>MedInventory v[^<]*<\/title>/, `<title>MedInventory v${nextVersion}</title>`));
+    fs.writeFileSync(indexHtmlPath, html.replace(/<title>[^<]*<\/title>/, `<title>VialTrack AI v${nextVersion}</title>`));
   }
 
   console.log(`Version bumped from ${currentVersion} to ${nextVersion}`);
