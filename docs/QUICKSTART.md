@@ -160,7 +160,8 @@ After any change: `npm run lint`, `npm run build`, `node scripts/bump-version.js
 | --- | --- |
 | Blank page or "Sign-in failed: unauthorized domain" | Add the domain under Firebase Auth → Authorized domains |
 | "AI features are unavailable" | `GEMINI_API_KEY` was not set when the app was built |
-| Trays won't save / "Missing or insufficient permissions" | Firestore rules not deployed for the `trays` collection |
+| Trays won't save / "Missing or insufficient permissions" | Firestore rules not deployed for the `trays` collection, or the bin is from the old app: use **Repair** on the Bins page |
+| Bins page shows an amber "came from the old app" banner | Data written by the 2026 prototype. Repair it (keeps the old totals) or wipe it under Settings → Danger zone and set up fresh |
 | Scanning a bin says "Bin not found" | Label printed from a different database or the bin was deleted; reprint from Bins |
 | Nothing prints | Print server not running and no Print Station tab open; check `lpstat -p` names in `printers.json` |
 | Version badge is old after a deploy | AI Studio deployed its workspace copy, not GitHub `main`; pull first |

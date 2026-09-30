@@ -316,7 +316,8 @@ export default function Settings() {
     if (confirmText !== 'RESET') return;
     setIsDeleting(true);
     try {
-      const collections = ['products', 'locations', 'baskets', 'inventoryLogs', 'printJobs'];
+      // learningData (AI training samples) and users/whitelist are deliberately kept.
+      const collections = ['trays', 'baskets', 'countingSessions', 'products', 'locations', 'inventoryLogs', 'printJobs'];
 
       for (const col of collections) {
         const snapshot = await getDocs(collection(db, col));

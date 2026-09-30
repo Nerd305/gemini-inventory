@@ -58,6 +58,7 @@ import {
   type TrayRecord,
 } from '../lib/inventory';
 import { LABEL_FORMAT_OPTIONS, sendPrintJobs } from '../lib/printing';
+import { basketNeedsRepair, repairLegacyData } from '../lib/repair';
 import type { LabelFormat } from '../shared/types';
 
 interface BinRecord extends BasketDoc {
@@ -151,6 +152,8 @@ export default function Bins() {
   const [trayLabelFormat, setTrayLabelFormat] = useState<LabelFormat>('2.5x1.5');
   const [sendingLabels, setSendingLabels] = useState(false);
   const [labelStatus, setLabelStatus] = useState<string | null>(null);
+  const [repairing, setRepairing] = useState(false);
+  const [repairStatus, setRepairStatus] = useState<string | null>(null);
 
   // Add / edit tray dialog
   const [trayDialogOpen, setTrayDialogOpen] = useState(false);
@@ -545,6 +548,22 @@ export default function Bins() {
   };
 
   const totalVialsShown = filtered.reduce((s, b) => s + basketTotal(b), 0);
+  const legacyBins = useMemo(() => bins.filter((b) => basketNeedsRepair(b as unknown as Record<string, unknown>)).length, [bins]);
+
+  const handleRepair = async () => {
+    if (!window.confirm('Add the missing fields to bins, products and locations created by the old app? Existing values are kept.')) return;
+    setRepairing(true);
+    setRepairStatus(null);
+    try {
+      const r = await repairLegacyData();
+      setRepairStatus(`Repaired ${r.bins} bin${r.bins === 1 ? '' : 's'}, ${r.products} product${r.products === 1 ? '' : 's'}, ${r.locations} location${r.locations === 1 ? '' : 's'}.`);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'baskets');
+      setRepairStatus('Repair failed. Check that the latest Firestore rules are published and try again.');
+    } finally {
+      setRepairing(false);
+    }
+  };
   const detailActive = useMemo(() => fifoOrder(detailTrays), [detailTrays]);
   const detailUseFirst = useMemo(() => useFirstTrayId(detailTrays), [detailTrays]);
 
@@ -564,6 +583,25 @@ export default function Bins() {
           <Plus className="h-4 w-4 mr-2" /> Add Bin
         </Button>
       </div>
+
+      {!loading && (legacyBins > 0 || repairStatus) && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 space-y-2">
+          {legacyBins > 0 && (
+            <p>
+              <strong>{legacyBins} bin{legacyBins === 1 ? '' : 's'}</strong> came from the old app and are missing fields the current rules
+              require, so they cannot be counted or edited yet. Repair adds the missing fields and keeps the old totals; or wipe the test data
+              under Settings → Danger zone and set up fresh.
+            </p>
+          )}
+          {repairStatus && <p className="text-amber-800">{repairStatus}</p>}
+          {legacyBins > 0 && (
+            <Button size="sm" variant="outline" className="border-amber-400 bg-white" onClick={handleRepair} disabled={repairing}>
+              {repairing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Repair {legacyBins} bin{legacyBins === 1 ? '' : 's'}
+            </Button>
+          )}
+        </div>
+      )}
 
       {!loading && locations.length === 0 && (
         <NextStepHint to="/locations" cta="Add a fridge">
