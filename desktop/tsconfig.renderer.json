@@ -17,7 +17,12 @@
     "useDefineForClassFields": true,
     "baseUrl": ".",
     "paths": {
-      "@shared/*": ["../src/shared/*"]
+      // Files under ../src resolve bare imports from the repo root. CI only
+      // installs this app's node_modules, so map those packages here.
+      "@shared/*": ["../src/shared/*"],
+      "firebase/*": ["./node_modules/firebase/*"],
+      "qrcode.react": ["./node_modules/qrcode.react/lib/index.d.ts"],
+      "react-barcode": ["./node_modules/react-barcode/lib/index.d.ts"]
     },
     "typeRoots": ["./node_modules/@types"]
   },
