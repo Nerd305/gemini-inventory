@@ -1,0 +1,569 @@
+<title>{{PROJECT_NAME}} Progress</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: one centred column (max 960px); summary first, detail behind tabs; status is carried
+     by a pill + a left stripe so a non-engineer can scan the page on a phone. */
+  :root {
+    --bg: #f5f8f8; --card: #ffffff; --fg: #152026; --muted: #5d6d75; --border: #dbe3e6; --soft: #eef3f4;
+    --accent: #0e7490; --accent-fg: #ffffff;
+    --done: #15803d; --done-bg: #e7f5ec; --progress: #b45309; --progress-bg: #fdf1e1;
+    --todo: #6b7a82; --todo-bg: #eef1f3; --blocked: #b91c1c; --blocked-bg: #fbe9e9; --manual: #6d28d9; --manual-bg: #efe9fb;
+    --font: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --radius: 12px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1518; --card: #161e22; --fg: #e8eef0; --muted: #96a6ad; --border: #28353b; --soft: #1c262b;
+      --accent: #2cc3dc; --accent-fg: #06252c;
+      --done: #4ade80; --done-bg: #12301d; --progress: #fbbf24; --progress-bg: #332607;
+      --todo: #9aabb3; --todo-bg: #1f2a2f; --blocked: #f87171; --blocked-bg: #3a1717; --manual: #c4b5fd; --manual-bg: #26203d;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f1518; --card: #161e22; --fg: #e8eef0; --muted: #96a6ad; --border: #28353b; --soft: #1c262b;
+    --accent: #2cc3dc; --accent-fg: #06252c;
+    --done: #4ade80; --done-bg: #12301d; --progress: #fbbf24; --progress-bg: #332607;
+    --todo: #9aabb3; --todo-bg: #1f2a2f; --blocked: #f87171; --blocked-bg: #3a1717; --manual: #c4b5fd; --manual-bg: #26203d;
+    color-scheme: dark;
+  }
+  body { background: var(--bg); color: var(--fg); font-family: var(--font); font-size: 15px; line-height: 1.5; }
+  body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+  .wrap { max-width: 960px; margin: 0 auto; padding-block: 20px 48px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  h1, h2, h3 { margin: 0; text-wrap: balance; line-height: 1.2; }
+  h1 { font-size: 1.7rem; font-weight: 700; }
+  h2 { font-size: 1.15rem; font-weight: 600; }
+  h3 { font-size: 1rem; font-weight: 600; }
+  p { margin: 0; }
+  a { color: var(--accent); }
+  button { font: inherit; }
+  .muted { color: var(--muted); }
+  .mono { font-family: var(--mono); font-size: 0.85em; }
+  .eyebrow { font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+
+  header.top { display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px; }
+  .meta-row { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: var(--soft); border: 1px solid var(--border); font-size: 0.82rem; }
+  .chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--todo); }
+  .chip.ok .dot { background: var(--done); } .chip.warn .dot { background: var(--progress); } .chip.bad .dot { background: var(--blocked); }
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--card); color: var(--fg); cursor: pointer; font-weight: 600; }
+  .btn.primary { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
+  .btn:disabled { opacity: 0.55; cursor: default; }
+  .btn:focus-visible, .tab:focus-visible, .tickbtn:focus-visible, .docbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  nav.tabs { display: flex; gap: 4px; overflow-x: auto; border-bottom: 1px solid var(--border); margin-bottom: 18px; scrollbar-width: none; }
+  nav.tabs::-webkit-scrollbar { display: none; }
+  .tab { flex: 0 0 auto; padding: 10px 14px; border: 0; background: none; color: var(--muted); font-weight: 600; border-bottom: 2px solid transparent; cursor: pointer; }
+  .tab[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
+  section[hidden] { display: none; }
+  .stack { display: flex; flex-direction: column; gap: 14px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; min-width: 0; }
+  .card h2 { margin-bottom: 8px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+  .tile { border-radius: var(--radius); padding: 14px; border: 1px solid var(--border); background: var(--card); border-left: 5px solid var(--todo); }
+  .tile.done { border-left-color: var(--done); } .tile.in_progress, .tile.todo { border-left-color: var(--progress); } .tile.blocked { border-left-color: var(--blocked); }
+  .tile .big { font-size: 1.05rem; font-weight: 600; margin-top: 2px; }
+  .chapters { display: flex; flex-direction: column; gap: 10px; }
+  .chrow { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; }
+  .chrow .title { font-weight: 600; }
+  .bar { grid-column: 1 / -1; height: 8px; border-radius: 999px; background: var(--soft); overflow: hidden; }
+  .bar > i { display: block; height: 100%; background: var(--done); width: 0; transition: width 0.4s ease; }
+  .counts { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
+
+  details.chapter { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); }
+  details.chapter > summary { list-style: none; cursor: pointer; padding: 14px 16px; display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; align-items: center; }
+  details.chapter > summary::-webkit-details-marker { display: none; }
+  details.chapter > summary .plain { grid-column: 1; color: var(--muted); font-size: 0.9rem; }
+  .milestones { border-top: 1px solid var(--border); }
+  .ms { display: grid; grid-template-columns: 6px 1fr; gap: 0 12px; padding: 12px 16px 12px 0; border-top: 1px solid var(--border); }
+  .ms:first-child { border-top: 0; }
+  .ms .stripe { background: var(--todo); border-radius: 0 3px 3px 0; }
+  .ms.done .stripe { background: var(--done); } .ms.in_progress .stripe { background: var(--progress); } .ms.blocked .stripe { background: var(--blocked); } .ms.manual .stripe { background: var(--manual); }
+  .ms .body { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .ms .head { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+  .pill { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; background: var(--todo-bg); color: var(--todo); }
+  .pill.done { background: var(--done-bg); color: var(--done); } .pill.in_progress { background: var(--progress-bg); color: var(--progress); }
+  .pill.blocked { background: var(--blocked-bg); color: var(--blocked); } .pill.manual { background: var(--manual-bg); color: var(--manual); }
+  .pill.uncertain { outline: 1px dashed currentColor; }
+  .ms .detail { color: var(--muted); font-size: 0.88rem; overflow-wrap: anywhere; }
+  .ms .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+  .tickbtn { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--fg); cursor: pointer; font-size: 0.88rem; font-weight: 600; }
+  .tickbtn.undo { color: var(--muted); }
+  .links a { font-size: 0.88rem; margin-right: 10px; }
+
+  table.kv { border-collapse: collapse; width: 100%; }
+  table.kv td { padding: 8px 0; border-top: 1px solid var(--border); vertical-align: top; }
+  table.kv td:first-child { color: var(--muted); width: 38%; padding-right: 12px; }
+  ul.list { margin: 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+  ul.list li { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: baseline; }
+  .docgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+  .docbtn { text-align: left; padding: 14px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--card); color: var(--fg); cursor: pointer; display: flex; flex-direction: column; gap: 4px; }
+  .docbtn b { font-weight: 600; } .docbtn span { color: var(--muted); font-size: 0.88rem; }
+  .docbtn:disabled { opacity: 0.6; cursor: default; }
+
+  dialog { border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); color: var(--fg); padding: 0; width: min(900px, calc(100vw - 24px)); max-height: calc(100vh - 24px); }
+  dialog::backdrop { background: rgba(0,0,0,0.45); }
+  .dlg-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; padding: 14px 16px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--card); z-index: 1; }
+  .dlg-body { padding: 16px; overflow: auto; max-height: calc(100vh - 110px); }
+  .md { line-height: 1.6; }
+  .md h1 { font-size: 1.4rem; margin: 1.2em 0 0.5em; } .md h2 { font-size: 1.15rem; margin: 1.2em 0 0.4em; } .md h3 { font-size: 1rem; margin: 1em 0 0.3em; }
+  .md p, .md ul, .md ol { margin: 0 0 0.8em; } .md li { margin: 0.2em 0; }
+  .md code { font-family: var(--mono); font-size: 0.85em; background: var(--soft); padding: 1px 5px; border-radius: 4px; }
+  .md pre { background: var(--soft); padding: 12px; border-radius: 8px; margin: 0; }
+  .md pre code { background: none; padding: 0; }
+  .md .scroll { overflow-x: auto; margin: 0 0 0.9em; }
+  .md table { border-collapse: collapse; min-width: 100%; font-size: 0.92rem; }
+  .md th, .md td { border: 1px solid var(--border); padding: 6px 8px; text-align: left; vertical-align: top; }
+  .md blockquote { margin: 0 0 0.8em; padding-left: 12px; border-left: 3px solid var(--border); color: var(--muted); }
+  .md input[type="checkbox"] { margin-right: 6px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chips label { border: 1px solid var(--border); border-radius: 999px; padding: 6px 12px; cursor: pointer; }
+  .chips input { margin-right: 6px; }
+  textarea, input[type="text"] { width: 100%; box-sizing: border-box; font: inherit; color: var(--fg); background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px; }
+  .answer { white-space: pre-wrap; overflow-wrap: anywhere; min-height: 2em; }
+  .notice { border-radius: var(--radius); padding: 12px 14px; background: var(--soft); border: 1px solid var(--border); }
+  .notice[hidden] { display: none; }
+  .skeleton { height: 12px; border-radius: 6px; background: var(--soft); margin: 8px 0; }
+  @media (prefers-reduced-motion: reduce) { .bar > i { transition: none; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <p class="eyebrow">Project dashboard</p>
+      <h1 id="projectName">Loading project…</h1>
+      <p id="oneLiner" class="muted">Connecting to the dashboard database…</p>
+    </div>
+    <div class="meta-row">
+      <span class="chip" id="versionChip"><span class="dot"></span><span>Version: …</span></span>
+      <span class="chip" id="lastChecked"><span class="dot"></span><span>Last checked: never</span></span>
+      <button class="btn primary" id="quickCheck" hidden>Quick check</button>
+      <span id="checkState" class="muted" hidden></span>
+    </div>
+    <div class="notice" id="notice" hidden></div>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button class="tab" role="tab" data-tab="overview" aria-selected="true">Overview</button>
+    <button class="tab" role="tab" data-tab="plan" aria-selected="false">Plan</button>
+    <button class="tab" role="tab" data-tab="engineering" aria-selected="false">Engineering</button>
+    <button class="tab" role="tab" data-tab="docs" aria-selected="false">Docs</button>
+    <button class="tab" role="tab" data-tab="ask" aria-selected="false">Ask</button>
+  </nav>
+
+  <section id="tab-overview" class="stack">
+    <div class="card"><h2>What this project is</h2><p id="goal" class="muted">The goal appears here once the first check has run.</p></div>
+    <div class="tiles" id="tiles">
+      <div class="tile"><p class="eyebrow">Live app</p><div class="skeleton"></div></div>
+      <div class="tile"><p class="eyebrow">Version</p><div class="skeleton"></div></div>
+      <div class="tile"><p class="eyebrow">Build check</p><div class="skeleton"></div></div>
+    </div>
+    <div class="card"><h2>Progress by chapter</h2><div class="chapters" id="chapterBars"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div></div>
+    <div class="card"><h2>What's next</h2><ul class="list" id="next"><li class="muted">Waiting for the first check…</li></ul></div>
+  </section>
+
+  <section id="tab-plan" class="stack" hidden>
+    <p class="muted">Items checked by the computer are marked <b>automatic</b>. Items that need a person show a button to mark them done.</p>
+    <div class="stack" id="planList"></div>
+  </section>
+
+  <section id="tab-engineering" class="stack" hidden>
+    <div class="card"><h2>Build & deploy</h2><table class="kv" id="engTable"><tr><td>Status</td><td class="muted">Waiting for the first check…</td></tr></table></div>
+    <div class="card"><h2>Recent changes</h2><ul class="list" id="commits"><li class="muted">No commits recorded yet.</li></ul></div>
+    <div class="card"><h2>Check history</h2><ul class="list" id="checks"><li class="muted">No checks yet.</li></ul></div>
+  </section>
+
+  <section id="tab-docs" class="stack" hidden>
+    <p class="muted">What the repository says about itself, in the words of each file. Snapshots are taken on every check.</p>
+    <div class="docgrid" id="docGrid"></div>
+  </section>
+
+  <section id="tab-ask" class="stack" hidden>
+    <div class="card">
+      <h2>Ask about this project</h2>
+      <p class="muted" style="margin-bottom:10px">Answers come from the documents and the current status only. Uses your own Claude account.</p>
+      <textarea id="question" rows="3" placeholder="For example: what does Complete & Sync do? What is left before the phones can be used?"></textarea>
+      <div class="meta-row" style="margin-top:10px">
+        <button class="btn primary" id="askBtn">Ask</button>
+        <button class="btn" id="stopBtn" hidden>Stop</button>
+        <span class="muted" id="askNote"></span>
+      </div>
+      <div class="answer" id="answer" style="margin-top:12px"></div>
+    </div>
+  </section>
+</div>
+
+<dialog id="docSheet">
+  <div class="dlg-head"><div><h2 id="docTitle">Document</h2><p class="muted" id="docSub"></p></div><button class="btn" id="docClose">Close</button></div>
+  <div class="dlg-body md" id="docBody"></div>
+</dialog>
+
+<dialog id="tickSheet">
+  <form method="dialog" id="tickForm">
+    <div class="dlg-head"><div><h2 id="tickTitle">Mark as done</h2><p class="muted" id="tickSub"></p></div><button class="btn" type="button" id="tickCancel">Cancel</button></div>
+    <div class="dlg-body stack">
+      <div><p class="eyebrow" style="margin-bottom:6px">Where did you check it?</p>
+        <div class="chips" id="whereChips">
+          <label><input type="radio" name="where" value="iPhone">iPhone</label>
+          <label><input type="radio" name="where" value="Android">Android</label>
+          <label><input type="radio" name="where" value="iMac">iMac</label>
+          <label><input type="radio" name="where" value="Desktop">Desktop</label>
+          <label><input type="radio" name="where" value="Other" checked>Other</label>
+        </div></div>
+      <div><button class="btn primary" type="submit" id="tickConfirm">Mark done</button></div>
+    </div>
+  </form>
+</dialog>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/18.0.14/lib/marked.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.4.16/purify.min.js"></script>
+<script type="module">
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? '');
+  const LABEL = { done: 'Done', in_progress: 'In progress', todo: 'Not started', blocked: 'Waiting on…', manual: 'Needs a person' };
+  const state = { meta: null, chapters: [], milestones: [], ticks: {}, commits: null, checks: [], db: null, user: null, mcp: null, sample: null, uid: null, isOwner: false, readOnly: false, runId: null, watchTimer: null, profiles: {}, docsCache: {} };
+  let renderQueued = false;
+
+  // ---------- tabs ----------
+  const TABS = ['overview', 'plan', 'engineering', 'docs', 'ask'];
+  function showTab(name) {
+    if (!TABS.includes(name)) name = 'overview';
+    for (const t of TABS) { $('tab-' + t).hidden = t !== name; }
+    document.querySelectorAll('.tab').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
+    try { localStorage.setItem('pm.tab', name); } catch {}
+  }
+  document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
+  (() => { let t = (location.hash || '').replace('#', ''); if (!TABS.includes(t)) { try { t = localStorage.getItem('pm.tab') || 'overview'; } catch { t = 'overview'; } } showTab(t); })();
+
+  // ---------- helpers ----------
+  const fmtDate = (iso) => { if (!iso) return ''; const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }); };
+  function showNotice(text) { const n = $('notice'); n.textContent = text; n.hidden = !text; }
+  function tickOf(m) { const t = state.ticks[m.id]; return t && t.done === true && typeof t.by === 'string' ? t : null; }
+  function effectiveStatus(m) { const t = tickOf(m); if (t && (m.kind === 'manual' || m.allowTick)) return 'done'; return m.status; }
+  function stripe(statusCls) { return `<div class="stripe"></div>`; }
+
+  // ---------- render ----------
+  function scheduleRender() { if (renderQueued) return; renderQueued = true; queueMicrotask(async () => { renderQueued = false; await resolveProfiles(); render(); }); }
+  async function resolveProfiles() {
+    if (!state.user) return;
+    const ids = [...new Set(Object.values(state.ticks).map((t) => t && t.by).filter(Boolean))];
+    if (!ids.length) return;
+    try { state.profiles = await state.user.profiles(ids); } catch { /* keep previous */ }
+  }
+  const nameOf = (id) => (state.profiles[id] && state.profiles[id].name) || 'Someone';
+
+  function render() {
+    const meta = state.meta;
+    if (meta) {
+      $('projectName').textContent = meta.name || 'Project';
+      $('oneLiner').textContent = meta.oneLiner || '';
+      $('goal').textContent = meta.goal || '';
+      document.title = `${meta.name || 'Project'} Progress`;
+      const code = meta.tiles?.version?.value && meta.tiles.version.value !== 'undefined' ? null : null;
+      const vt = meta.tiles?.version;
+      const vChip = $('versionChip');
+      vChip.querySelector('span:last-child').textContent = vt ? `Version: ${vt.detail || vt.value || '?'}` : `Version: ${meta.repoVersion || '?'}`;
+      vChip.className = 'chip ' + (vt ? (vt.status === 'done' ? 'ok' : 'warn') : '');
+      const lc = $('lastChecked');
+      lc.querySelector('span:last-child').textContent = meta.lastCheckedAt ? `Last checked: ${fmtDate(meta.lastCheckedAt)}` : 'Last checked: never';
+      lc.className = 'chip ' + (meta.lastCheckedAt ? 'ok' : '');
+    }
+    renderTiles(); renderChapterBars(); renderNext(); renderPlan(); renderEngineering(); renderDocs();
+    if (state.runId && meta && meta.lastCheckRunId === state.runId) finishWatch('Updated just now.');
+  }
+
+  function renderTiles() {
+    const tiles = state.meta?.tiles || {};
+    const defs = [['live', 'Live app'], ['version', 'Version'], ['ci', 'Build check']];
+    $('tiles').innerHTML = defs.map(([k, label]) => {
+      const t = tiles[k];
+      const cls = t ? t.status : 'todo';
+      let text = 'Not checked yet';
+      if (t) {
+        if (k === 'live') text = t.status === 'done' ? 'Healthy' : 'Not answering';
+        else if (k === 'version') text = t.status === 'done' ? 'Live matches the code' : 'Deploy pending';
+        else text = t.status === 'done' ? 'Passing' : t.value === 'failure' ? 'Failed' : t.value === 'none' ? 'No runs yet' : String(t.value || 'Unknown');
+      }
+      return `<div class="tile ${cls}"><p class="eyebrow">${label}</p><div class="big"></div><p class="muted" style="font-size:0.85rem"></p></div>`;
+    }).join('');
+    [...$('tiles').children].forEach((el, i) => {
+      const t = tiles[defs[i][0]];
+      el.querySelector('.big').textContent = !t ? 'Not checked yet' : defs[i][0] === 'live' ? (t.status === 'done' ? 'Healthy' : 'Not answering') : defs[i][0] === 'version' ? (t.status === 'done' ? 'Live matches the code' : 'Deploy pending') : (t.status === 'done' ? 'Passing' : t.value === 'failure' ? 'Failed' : t.value === 'none' ? 'No runs yet' : String(t.value || 'Unknown'));
+      el.querySelector('p.muted').textContent = t ? (t.detail || '') : '';
+    });
+  }
+
+  function chaptersSorted() { return [...state.chapters].sort((a, b) => (a.order || 0) - (b.order || 0)); }
+  function milestonesOf(ch) { return state.milestones.filter((m) => m.chapterId === ch.id).sort((a, b) => (a.order || 0) - (b.order || 0)); }
+  function chapterCounts(ch) {
+    const ms = milestonesOf(ch); const c = { done: 0, total: ms.length };
+    for (const m of ms) if (effectiveStatus(m) === 'done') c.done += 1;
+    return c;
+  }
+
+  function renderChapterBars() {
+    const el = $('chapterBars');
+    if (!state.chapters.length) { el.innerHTML = '<p class="muted">No chapters yet. In Claude Code, run /pm-check to fill this dashboard.</p>'; return; }
+    el.innerHTML = '';
+    for (const ch of chaptersSorted()) {
+      const c = chapterCounts(ch); const pct = c.total ? Math.round((c.done / c.total) * 100) : 0;
+      const row = document.createElement('div'); row.className = 'chrow';
+      row.innerHTML = `<span class="title"></span><span class="counts"></span><div class="bar"><i></i></div>`;
+      row.querySelector('.title').textContent = ch.title; row.querySelector('.counts').textContent = `${c.done} of ${c.total}`; row.querySelector('.bar > i').style.width = pct + '%';
+      el.appendChild(row);
+    }
+  }
+
+  function renderNext() {
+    const el = $('next'); el.innerHTML = '';
+    const open = [];
+    for (const ch of chaptersSorted()) for (const m of milestonesOf(ch)) { const s = effectiveStatus(m); if (s !== 'done') open.push({ m, ch, s }); }
+    if (!open.length) { el.innerHTML = state.chapters.length ? '<li class="muted">Everything is done.</li>' : '<li class="muted">Waiting for the first check…</li>'; return; }
+    for (const { m, ch, s } of open.slice(0, 4)) {
+      const li = document.createElement('li');
+      li.innerHTML = `<span class="pill"></span><span><b></b> <span class="muted"></span></span>`;
+      const pill = li.querySelector('.pill'); pill.classList.add(s); pill.textContent = LABEL[s];
+      li.querySelector('b').textContent = m.title; li.querySelector('span.muted').textContent = `— ${ch.title}`;
+      el.appendChild(li);
+    }
+  }
+
+  function renderPlan() {
+    const list = $('planList');
+    if (!state.chapters.length) { list.innerHTML = '<div class="card muted">No data yet. In Claude Code, run /pm-check to fill this dashboard.</div>'; return; }
+    const openState = {}; list.querySelectorAll('details.chapter').forEach((d) => { openState[d.dataset.id] = d.open; });
+    list.innerHTML = '';
+    let firstOpenDone = false;
+    for (const ch of chaptersSorted()) {
+      const c = chapterCounts(ch);
+      const d = document.createElement('details'); d.className = 'chapter'; d.dataset.id = ch.id;
+      const shouldOpen = openState[ch.id] !== undefined ? openState[ch.id] : (!firstOpenDone && c.done < c.total);
+      if (shouldOpen && openState[ch.id] === undefined) firstOpenDone = true;
+      d.open = shouldOpen;
+      d.innerHTML = `<summary><span class="title"></span><span class="counts"></span><span class="plain"></span></summary><div class="milestones"></div>`;
+      d.querySelector('.title').textContent = ch.title; d.querySelector('.counts').textContent = `${c.done} of ${c.total}`; d.querySelector('.plain').textContent = ch.plain || '';
+      const box = d.querySelector('.milestones');
+      for (const m of milestonesOf(ch)) box.appendChild(milestoneRow(m));
+      list.appendChild(d);
+    }
+  }
+
+  function milestoneRow(m) {
+    const s = effectiveStatus(m); const tick = tickOf(m);
+    const row = document.createElement('div'); row.className = `ms ${s}`;
+    row.innerHTML = `<div class="stripe"></div><div class="body"><div class="head"><b class="t"></b><span class="pill"></span><span class="muted mode"></span></div><p class="plain"></p><p class="detail"></p><div class="links"></div><div class="actions"></div></div>`;
+    row.querySelector('.t').textContent = m.title;
+    const pill = row.querySelector('.pill'); pill.classList.add(s); if (m.uncertain && s !== 'done') pill.classList.add('uncertain'); pill.textContent = LABEL[s] || s;
+    row.querySelector('.mode').textContent = m.kind === 'manual' ? 'checked by a person' : 'automatic';
+    row.querySelector('.plain').textContent = m.plain || '';
+    const detail = row.querySelector('.detail');
+    if (tick && s === 'done') detail.textContent = `Marked done by ${nameOf(tick.by)}${tick.where ? ' on ' + tick.where : ''}${tick.at ? ', ' + fmtDate(tick.at) : ''}.`;
+    else if (s === 'blocked') detail.textContent = `Waiting on: ${(m.blockedByTitles || []).join(', ') || 'another item'}.`;
+    else if (m.kind === 'manual') detail.textContent = m.verify ? `How to check: ${m.verify}` : '';
+    else if (s === 'done') detail.textContent = (m.doneInVersion ? `Shipped in version ${m.doneInVersion}. ` : '') + (m.probes || []).map((p) => p.detail).filter(Boolean).slice(0, 2).join(' · ');
+    else {
+      const failing = (m.probes || []).filter((p) => !p.ok);
+      const why = failing.map((p) => p.error ? `Couldn't verify: ${p.error}` : p.detail).filter(Boolean).join(' · ');
+      detail.textContent = m.plainWhenFailing ? `${m.plainWhenFailing}${why ? ' (' + why + ')' : ''}` : why ? `Automatic check didn't pass: ${why}` : '';
+    }
+    const links = row.querySelector('.links');
+    for (const l of m.links || []) { if (!/^https?:/.test(l.url || '')) continue; const a = document.createElement('a'); a.href = l.url; a.target = '_blank'; a.rel = 'noopener'; a.textContent = l.label || l.url; links.appendChild(a); }
+    const actions = row.querySelector('.actions');
+    const tickable = (m.kind === 'manual' || m.allowTick) && state.db && state.uid && !state.readOnly;
+    if (tickable) {
+      const b = document.createElement('button'); b.className = 'tickbtn' + (tick ? ' undo' : '');
+      b.textContent = tick ? 'Undo' : 'Mark done';
+      b.addEventListener('click', () => tick ? undoTick(m) : openTickSheet(m));
+      actions.appendChild(b);
+    }
+    return row;
+  }
+
+  function renderEngineering() {
+    const meta = state.meta; const t = $('engTable');
+    if (!meta) return;
+    const rows = [];
+    rows.push(['Code version', meta.repoVersion || '?']);
+    rows.push(['Live version', meta.tiles?.version?.detail || (meta.liveVersion || 'unknown')]);
+    rows.push(['Latest build check', meta.tiles?.ci ? (meta.tiles.ci.detail || meta.tiles.ci.value) : 'unknown']);
+    rows.push(['How it deploys', meta.deploy?.plain || meta.deploy?.mode || '']);
+    rows.push(['Branch being checked', `${meta.repoBranch || ''}${meta.repoHead ? ' @ ' + String(meta.repoHead).slice(0, 7) : ''}${meta.dirty ? ' (uncommitted changes)' : ''}`]);
+    if (typeof meta.backlogOpen === 'number') rows.push(['Open items in TASKS.md', String(meta.backlogOpen)]);
+    if (meta.summary) { const s = meta.summary; rows.push(['Milestones', `${s.done} done · ${s.in_progress} in progress · ${s.todo} not started · ${s.blocked} waiting · ${s.manual} need a person`]); }
+    t.innerHTML = ''; for (const [k, v] of rows) { const tr = document.createElement('tr'); tr.innerHTML = '<td></td><td></td>'; tr.children[0].textContent = k; tr.children[1].textContent = v; t.appendChild(tr); }
+    const cl = $('commits'); cl.innerHTML = '';
+    const commits = state.commits?.commits || [];
+    if (!commits.length) cl.innerHTML = '<li class="muted">No commits recorded yet.</li>';
+    for (const c of commits.slice(0, 15)) { const li = document.createElement('li'); li.innerHTML = '<span class="mono muted"></span><span></span>'; li.children[0].textContent = `${(c.date || '').slice(0, 10)} ${String(c.sha || '').slice(0, 7)}`; li.children[1].textContent = c.subject || ''; cl.appendChild(li); }
+    const ck = $('checks'); ck.innerHTML = '';
+    if (!state.checks.length) ck.innerHTML = '<li class="muted">No checks yet.</li>';
+    for (const c of state.checks) { const li = document.createElement('li'); li.innerHTML = '<span class="mono muted"></span><span></span>'; li.children[0].textContent = fmtDate(c.startedAt); const s = c.summary || {}; li.children[1].textContent = `${s.done ?? '?'} of ${s.total ?? '?'} done · ${c.source || 'check'}${c.probesErrored ? ` · ${c.probesErrored} couldn't verify` : ''}${c.changed && c.changed.length ? ` · changed: ${c.changed.slice(0, 3).join(', ')}` : ''}`; ck.appendChild(li); }
+  }
+
+  function renderDocs() {
+    const grid = $('docGrid'); const docs = state.meta?.docs || [];
+    grid.innerHTML = '';
+    if (!docs.length) { grid.innerHTML = '<p class="muted">Documents appear after the first check.</p>'; return; }
+    for (const d of docs) { const b = document.createElement('button'); b.className = 'docbtn'; b.innerHTML = '<b></b><span></span>'; b.querySelector('b').textContent = d.label || d.path; b.querySelector('span').textContent = d.plain || d.path; b.addEventListener('click', () => openDoc(d)); grid.appendChild(b); }
+  }
+
+  // ---------- ticks ----------
+  let pendingTick = null;
+  function openTickSheet(m) { pendingTick = m; $('tickTitle').textContent = m.title; $('tickSub').textContent = m.verify ? `How to check: ${m.verify}` : m.plain || ''; $('tickSheet').showModal(); }
+  $('tickCancel').addEventListener('click', () => $('tickSheet').close());
+  $('tickForm').addEventListener('submit', async (e) => {
+    e.preventDefault(); const m = pendingTick; if (!m || !state.db || !state.uid) return;
+    const where = (new FormData($('tickForm')).get('where') || 'Other').toString();
+    const btn = $('tickConfirm'); btn.disabled = true;
+    try {
+      await state.db.doc('ticks/' + m.id).set({ milestoneId: m.id, done: true, by: state.uid, at: new Date().toISOString(), where });
+      $('tickSheet').close();
+    } catch (err) { handleDbWriteError(err); $('tickSheet').close(); }
+    finally { btn.disabled = false; pendingTick = null; }
+  });
+  async function undoTick(m) { if (!state.db) return; try { await state.db.doc('ticks/' + m.id).delete(); } catch (err) { handleDbWriteError(err); } }
+  function handleDbWriteError(err) {
+    const code = err && err.code;
+    if (code === 'invalid_argument') { state.readOnly = true; showNotice('You can view this dashboard but not mark items here. Ask the owner for Contributor access.'); scheduleRender(); }
+    else if (code === 'quota_exceeded') showNotice('The dashboard database is full. Ask Claude to prune old checks.');
+    else if (code === 'revoked') showNotice('This dashboard is no longer available to you.');
+    else showNotice('Could not save that change. Try again in a moment.');
+  }
+
+  // ---------- docs ----------
+  async function openDoc(d) {
+    $('docTitle').textContent = d.label || d.path; $('docSub').textContent = d.plain || ''; $('docBody').textContent = 'Loading…'; $('docSheet').showModal();
+    let doc = state.docsCache[d.key];
+    if (!doc && state.db) { try { const snap = await state.db.doc('docs/' + d.key).get(); doc = snap.exists ? snap.data() : { missing: true }; state.docsCache[d.key] = doc; } catch { doc = null; } }
+    if (!doc) { $('docBody').textContent = 'Could not load this document right now.'; return; }
+    if (doc.missing) { $('docBody').textContent = 'Not in the repository yet.'; return; }
+    renderMarkdown($('docBody'), doc.markdown || '', d.path);
+    const sub = []; if (doc.snapshotAt) sub.push(`Snapshot from ${fmtDate(doc.snapshotAt)}`); if (doc.truncated) sub.push('shortened');
+    const gh = ghUrl(d.path); $('docSub').innerHTML = ''; $('docSub').append(sub.join(' · ') + (sub.length ? ' · ' : '')); const a = document.createElement('a'); a.href = gh; a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'Open on GitHub'; $('docSub').appendChild(a);
+  }
+  $('docClose').addEventListener('click', () => $('docSheet').close());
+  function ghUrl(p) { const meta = state.meta || {}; const ref = meta.repoHead || meta.repo?.defaultBranch || 'main'; return `${meta.repo?.url || ''}/blob/${ref}/${p}`; }
+  function resolvePath(base, href) {
+    const dir = base.includes('/') ? base.slice(0, base.lastIndexOf('/')) : '';
+    const parts = (dir ? dir.split('/') : []); for (const seg of href.split('/')) { if (!seg || seg === '.') continue; if (seg === '..') parts.pop(); else parts.push(seg); }
+    return parts.join('/');
+  }
+  function renderMarkdown(container, md, docPath) {
+    const html = window.DOMPurify && window.marked ? DOMPurify.sanitize(marked.parse(md, { gfm: true }), { ADD_ATTR: ['target'] }) : '';
+    if (!html) { container.textContent = md; return; }
+    container.innerHTML = html;
+    const docs = state.meta?.docs || [];
+    container.querySelectorAll('h1,h2,h3,h4,h5,h6').forEach((h) => { h.id = h.textContent.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''); });
+    container.querySelectorAll('a[href]').forEach((a) => {
+      const href = a.getAttribute('href') || '';
+      if (/^(https?:|mailto:|#)/.test(href)) { if (/^https?:/.test(href)) { a.target = '_blank'; a.rel = 'noopener'; } return; }
+      const [rawPath, frag] = href.split('#');
+      const resolved = resolvePath(docPath, rawPath);
+      const target = docs.find((x) => x.path === resolved);
+      if (target) { a.href = '#'; a.addEventListener('click', (e) => { e.preventDefault(); openDoc(target); }); }
+      else { a.href = ghUrl(resolved) + (frag ? '#' + frag : ''); a.target = '_blank'; a.rel = 'noopener'; }
+    });
+    container.querySelectorAll('img[src]').forEach((img) => { const src = img.getAttribute('src') || ''; if (!/^(https?:|data:)/.test(src)) { const meta = state.meta || {}; img.src = `${meta.repo?.url || ''}/raw/${meta.repoHead || 'main'}/${resolvePath(docPath, src)}`; } });
+    container.querySelectorAll('table, pre').forEach((el) => { const w = document.createElement('div'); w.className = 'scroll'; el.replaceWith(w); w.appendChild(el); });
+    container.querySelectorAll('input[type="checkbox"]').forEach((i) => { i.disabled = true; });
+  }
+
+  // ---------- quick check ----------
+  function setChip(text) { const c = $('checkState'); c.textContent = text; c.hidden = !text; }
+  function finishWatch(text) { state.runId = null; if (state.watchTimer) clearTimeout(state.watchTimer); state.watchTimer = null; $('quickCheck').disabled = false; setChip(text); }
+  async function setupQuickCheck() {
+    const btn = $('quickCheck');
+    if (!state.mcp || !state.isOwner || !state.meta?.dashboard?.triggerId) { btn.hidden = true; return; }
+    btn.hidden = false;
+    btn.onclick = async () => {
+      const startedAt = new Date().toISOString(); const runId = 'run-' + startedAt.replace(/[:.]/g, '-');
+      btn.disabled = true; setChip('Starting the check…');
+      try {
+        await state.mcp.callTool('Claude Code Remote', 'fire_trigger', { trigger_id: state.meta.dashboard.triggerId, text: `runId=${runId} source=dashboard` });
+        state.runId = runId; setChip('Check running. This usually takes 2 to 5 minutes; the page updates by itself.');
+        state.watchTimer = setTimeout(async () => {
+          let extra = '';
+          try { const r = await state.mcp.callTool('Claude Code Remote', 'get_trigger', { trigger_id: state.meta.dashboard.triggerId }); const lr = r.payload?.trigger?.last_run || r.payload?.last_run; if (lr?.status) extra = ` Last run: ${lr.status}.`; } catch {}
+          finishWatch('Taking longer than usual; the check may still be running.' + extra + ' Last checked: ' + fmtDate(state.meta?.lastCheckedAt));
+        }, 10 * 60 * 1000);
+      } catch (e) { btn.disabled = false; setChip(mcpCopy(e)); }
+    };
+  }
+  function mcpCopy(e) {
+    const code = e && e.code;
+    switch (code) {
+      case 'server_not_connected': return "Add the 'Claude Code Remote' connector in claude.ai Settings → Connectors, then try again.";
+      case 'needs_reauth': return "Reconnect 'Claude Code Remote' in claude.ai Settings → Connectors.";
+      case 'selection_required': return 'Choose which Claude Code Remote connector this page may use when claude.ai asks, then click again.';
+      case 'not_in_manifest': return "This page is not allowed to use Claude Code Remote for you. Turn it on in the page's Permissions menu.";
+      case 'approval_required': return 'Claude needs your approval to start the check. Click again and choose Allow.';
+      case 'consent_required': return 'Allow the connector when claude.ai asks, then click again.';
+      case 'blocked_by_policy': return 'Your organization does not allow this from a page. Run /pm-check from Claude Code instead.';
+      case 'tool_error': return 'Could not start the check: ' + (e.message || 'the scheduled task refused') + '. If the task was deleted, see pm/README.md.';
+      case 'server_unavailable': case 'upstream_error': return "Couldn't confirm the check started. Wait a minute; if 'Last checked' doesn't change, click again.";
+      case 'rate_limited': return 'Too many requests. Wait a moment and try again.';
+      case 'not_granted': case 'capability_disabled': case 'capability_removed': $('quickCheck').hidden = true; return 'Quick check is not available here. Run /pm-check from Claude Code.';
+      case 'user_changed': return '';
+      default: return `Could not start the check (${code || 'unknown'}).`;
+    }
+  }
+
+  // ---------- ask ----------
+  let askCtl = null;
+  async function setupAsk() {
+    if (!state.sample) { document.querySelector('[data-tab="ask"]').hidden = true; if (!$('tab-ask').hidden) showTab('overview'); return; }
+    $('askBtn').addEventListener('click', ask);
+    $('stopBtn').addEventListener('click', () => askCtl && askCtl.abort());
+  }
+  const turns = [];
+  async function ask() {
+    const q = $('question').value.trim(); if (!q) return;
+    const meta = state.meta; if (!meta) { $('askNote').textContent = 'Wait for the first check first.'; return; }
+    let docsText = '';
+    try { const snap = await state.db.collection('docs').get(); const byKey = {}; for (const d of snap.docs) byKey[d.id] = d.data(); for (const d of meta.docs || []) { const doc = byKey[d.key]; if (doc && doc.markdown) docsText += `\n\n--- ${d.label} (${d.path}) ---\n${doc.markdown}`; } } catch {}
+    if (docsText.length > 150000) docsText = docsText.slice(0, 150000) + '\n[material shortened]';
+    const digest = chaptersSorted().map((ch) => { const c = chapterCounts(ch); const open = milestonesOf(ch).filter((m) => effectiveStatus(m) !== 'done').map((m) => m.title); return `${ch.title}: ${c.done}/${c.total} done. Open: ${open.join('; ') || 'none'}`; }).join('\n').slice(0, 4000);
+    const RULES = `You are answering questions about the software project "${meta.name}" for its owner, who is not an engineer. Use plain words and short sentences; explain any jargon. Answer only from the material below; if the answer is not there, say so. Name the document you used (for example "from the Quick start").`;
+    const input = [{ role: 'user', content: `${RULES}\n\n=== Project status ===\n${digest}\n\n=== Documents ===${docsText}` }, ...turns, { role: 'user', content: q }];
+    askCtl = new AbortController(); const out = $('answer'); out.textContent = 'Thinking…'; $('askBtn').disabled = true; $('stopBtn').hidden = false; $('askNote').textContent = '';
+    try {
+      const { text, truncated } = await state.sample(input, { cache: false, signal: askCtl.signal, modelTier: 'default', onText: ({ text }) => { out.textContent = text; } });
+      turns.push({ role: 'user', content: q }, { role: 'assistant', content: text }); while (turns.length > 6) turns.shift();
+      if (truncated) $('askNote').textContent = 'Cut short. Ask for less at a time.';
+    } catch (e) {
+      out.textContent = e && e.text ? e.text : '';
+      const code = e && e.code;
+      if (code === 'cancelled') $('askNote').textContent = '';
+      else if (['not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed'].includes(code)) { document.querySelector('[data-tab="ask"]').hidden = true; showTab('overview'); showNotice('Asking Claude is not available here.'); }
+      else if (code === 'rate_limited') $('askNote').textContent = 'Claude is busy. Try again in a minute.';
+      else if (code === 'session_expired') $('askNote').textContent = 'Sign in to claude.ai again, then ask.';
+      else if (code === 'refused') { out.textContent = ''; $('askNote').textContent = 'Claude declined that question. Try rephrasing.'; }
+      else if (code === 'empty_completion') $('askNote').textContent = 'No answer came back. Try rephrasing.';
+      else if (code === 'prompt_too_large') $('askNote').textContent = 'Too much material for one question. Ask something narrower.';
+      else $('askNote').textContent = 'Interrupted. Ask again.';
+    } finally { $('askBtn').disabled = false; $('stopBtn').hidden = true; askCtl = null; }
+  }
+
+  // ---------- boot ----------
+  async function boot() {
+    if (!window.claude || typeof window.claude.use !== 'function') { showNotice('Open this page in claude.ai to see live data.'); $('oneLiner').textContent = ''; return; }
+    const db = await claude.use('db');
+    if (!db) { showNotice('Sign in to claude.ai to see this dashboard.'); $('oneLiner').textContent = ''; return; }
+    state.db = db;
+    state.user = await claude.use('user');
+    try { state.uid = state.user ? await state.user.id() : null; state.isOwner = state.user ? await state.user.isOwner() : false; } catch {}
+    const onErr = (e) => { if (e && e.code === 'revoked') showNotice('This dashboard is no longer available to you.'); else console.warn('db', e); };
+    db.doc('project/meta').onSnapshot((snap) => { state.meta = snap.exists ? snap.data() : null; if (!snap.exists) { showNotice('No data yet. In Claude Code, run /pm-check to fill this dashboard.'); $('oneLiner').textContent = ''; } else showNotice(''); scheduleRender(); setupQuickCheck(); }, onErr);
+    db.collection('chapters').onSnapshot((snap) => { state.chapters = snap.docs.map((d) => d.data()); scheduleRender(); }, onErr);
+    db.collection('milestones').onSnapshot((snap) => { state.milestones = snap.docs.map((d) => d.data()); scheduleRender(); }, onErr);
+    db.collection('ticks').onSnapshot((snap) => { const t = {}; for (const d of snap.docs) t[d.id] = d.data(); state.ticks = t; scheduleRender(); }, onErr);
+    db.doc('activity/commits').onSnapshot((snap) => { state.commits = snap.exists ? snap.data() : null; scheduleRender(); }, onErr);
+    db.collection('checks').orderBy('startedAt', 'desc').limit(10).onSnapshot((snap) => { state.checks = snap.docs.map((d) => d.data()); scheduleRender(); }, onErr);
+    state.mcp = await claude.use('mcp');
+    state.sample = await claude.use('sample');
+    setupQuickCheck(); setupAsk();
+  }
+  boot();
+</script>

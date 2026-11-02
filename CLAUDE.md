@@ -8,6 +8,7 @@ Two independent applications share one Firestore database and a `src/shared/` co
 
 - **Root (`/`)** — React 19 + Vite + Tailwind 4 web app (VialTrack AI, formerly MedInventory), packaged into a Node container that also runs an Express webhook backend. Built for Google AI Studio; uses Gemini via `@google/genai` and Firebase Auth + Firestore.
 - **`desktop/`** — Electron + Vite + TypeScript macOS print server (VialTrack Print Server). Runs on the pharmacy iMac, subscribes to the Firestore `printJobs` queue, and routes each job to a physical printer via CUPS (`lp`).
+- **`pm/`** — project-manager dashboard kit (`plan.json` chapters/milestones/probes, `probe.mjs` runner, `dashboard.html` artifact page template, `README.md` reuse guide). Generic and repo-portable; the `/pm-check` skill in `.claude/skills/` fills the dashboard. Never ships in the app image.
 
 The desktop renderer imports shared types and the `usePrintJobQueue` hook from the root via Vite aliases:
 - `@shared` → `../src/shared`
@@ -26,12 +27,14 @@ npm run build    # vite build → dist/
 npm run start    # node server.js — Express on :8080 serves dist/ + /api/webhook/sale
 npm run lint     # tsc --noEmit (type-check only; no ESLint configured)
 node scripts/bump-version.js # Bump patch version and sync src/lib/version.ts + index.html <title>
+node pm/probe.mjs --pretty   # Run the project-dashboard probes locally (see pm/README.md)
 ```
 
 ## Versioning
 
 - The application version is defined in `package.json` and mirrored in `src/lib/version.ts`.
 - **CRITICAL**: Whenever implementing new features or fixes, run `node scripts/bump-version.js` to increment the version number. This ensures the UI displays the latest rollout status.
+- **After shipping**, run `/pm-check` (refreshes the owner's project dashboard from `pm/plan.json`). When a milestone's definition changed, edit `pm/plan.json` first, then run `/pm-check`. The quick check never commits, pushes or deploys; see [pm/README.md](pm/README.md).
 
 Desktop app (from `desktop/`):
 
@@ -80,7 +83,7 @@ Auth for 2 and 3: `Authorization: Bearer <key>` where key = `VIALTRACK_API_KEY` 
 
 Listens on `process.env.PORT || 8080`. Initialized via `firebase-admin` using ADC — locally set `GOOGLE_APPLICATION_CREDENTIALS` to a service-account key, on Cloud Run / GCE the metadata server provides it automatically.
 
-Deployment is a single-stage Docker build: [Dockerfile](Dockerfile) does `npm run build` → copies `dist/` and `server.js` into a slim Node 22 image → `node server.js`. There is no separate nginx layer (the previous `nginx.conf` was removed).
+Deployment is a two-stage Docker build: stage 1 (`node:22-alpine AS build`) runs `npm run build`; stage 2 (`node:22-alpine`) installs production dependencies and copies `dist/`, `server.js` and `firebase-applet-config.json`, then runs `node server.js`. There is no separate nginx layer (the previous `nginx.conf` was removed).
 
 ## API bridge (bidirectional)
 

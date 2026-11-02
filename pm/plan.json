@@ -1,0 +1,1511 @@
+{
+  "kit": 1,
+  "project": {
+    "id": "vialtrack",
+    "name": "VialTrack AI",
+    "oneLiner": "Physical inventory for a compounding pharmacy fridge, built for phones and an iMac label station.",
+    "goal": "VialTrack keeps a live count of the compounded vials in the pharmacy fridge. Every shelf, bin and 25-vial tray gets a QR label; staff count with a phone by scanning and tapping, with optional AI photo counting. It remembers each tray's lot number and beyond-use date so it always shows which tray to use first, and every count updates stock, is logged, and can be pulled as a spreadsheet or over an API.",
+    "repo": {
+      "url": "https://github.com/Nerd305/gemini-inventory",
+      "branch": "claude/magical-davinci-08fvss",
+      "defaultBranch": "main"
+    },
+    "live": {
+      "url": "https://blu35inventory-156214809618.us-west1.run.app",
+      "healthPath": "/api/v1/health"
+    },
+    "deploy": {
+      "mode": "github-actions",
+      "plain": "Merging to main builds the app and deploys it to Google Cloud Run automatically (GitHub Actions). Nothing is deployed from AI Studio any more."
+    },
+    "docs": [
+      {
+        "key": "readme",
+        "path": "README.md",
+        "label": "README",
+        "plain": "The front door: what the app is and how to set it up."
+      },
+      {
+        "key": "claude",
+        "path": "CLAUDE.md",
+        "label": "CLAUDE.md",
+        "plain": "The rulebook Claude follows when it changes this code."
+      },
+      {
+        "key": "gemini",
+        "path": "GEMINI.md",
+        "label": "GEMINI.md",
+        "plain": "Rules for Gemini-based assistants (AI Studio, Antigravity) working on this repo."
+      },
+      {
+        "key": "tasks",
+        "path": "TASKS.md",
+        "label": "TASKS.md",
+        "plain": "What has shipped and what is still open, by version."
+      },
+      {
+        "key": "quickstart",
+        "path": "docs/QUICKSTART.md",
+        "label": "Quick start",
+        "plain": "The staff guide: setup, counting, printing and the testing checklist."
+      },
+      {
+        "key": "api",
+        "path": "docs/API.md",
+        "label": "API reference",
+        "plain": "How other systems pull counts and stock."
+      },
+      {
+        "key": "desktop",
+        "path": "desktop/README.md",
+        "label": "Print server",
+        "plain": "Installing the iMac label-printer app."
+      }
+    ]
+  },
+  "dashboard": {
+    "artifactUrl": "https://claude.ai/artifact/SBXjcnUxNe9rVgy7ZMSAu9",
+    "triggerId": "trig_01889DSY92nZ5Y6p82xL4ys8",
+    "environmentId": "env_011CUKaKk5D51AW4y3BWZipf",
+    "connector": "Claude Code Remote"
+  },
+  "checks": {
+    "keepRuns": 20,
+    "commitCount": 30,
+    "ciWorkflow": "ci.yml",
+    "ciBranch": "main"
+  },
+  "chapters": [
+    {
+      "id": "foundation",
+      "order": 1,
+      "title": "Foundation & deploy",
+      "plain": "The app builds, is live on the internet, and the live copy matches the code.",
+      "milestones": [
+        {
+          "id": "ci-exists",
+          "title": "Automatic build check exists",
+          "plain": "GitHub checks every change still compiles.",
+          "kind": "probe",
+          "doneInVersion": "1.0.12",
+          "probes": [
+            {
+              "type": "file-exists",
+              "path": ".github/workflows/ci.yml"
+            }
+          ]
+        },
+        {
+          "id": "ci-green",
+          "title": "Latest build check passed",
+          "plain": "The most recent automatic check on main is green.",
+          "kind": "probe",
+          "tile": "ci",
+          "probes": [
+            {
+              "type": "gh-run",
+              "workflow": "ci.yml",
+              "branch": "main",
+              "expectConclusion": "success"
+            }
+          ],
+          "links": [
+            {
+              "label": "See runs",
+              "url": "https://github.com/Nerd305/gemini-inventory/actions"
+            }
+          ],
+          "plainWhenFailing": "The last automatic check on main failed. An engineer needs to look at the GitHub Actions log."
+        },
+        {
+          "id": "version-sync",
+          "title": "Version numbers agree",
+          "plain": "package.json, the in-app badge and the browser tab title all say the same version.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "same-value",
+              "sources": [
+                {
+                  "type": "json-field",
+                  "path": "package.json",
+                  "field": "version",
+                  "label": "package.json"
+                },
+                {
+                  "type": "grep-capture",
+                  "path": "src/lib/version.ts",
+                  "pattern": "APP_VERSION = '([^']+)'",
+                  "label": "in-app badge"
+                },
+                {
+                  "type": "grep-capture",
+                  "path": "index.html",
+                  "pattern": "<title>[^<]*v([0-9.]+)</title>",
+                  "label": "tab title"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "live-up",
+          "title": "Live app answers",
+          "plain": "The website responds and reports it is healthy.",
+          "kind": "probe",
+          "tile": "live",
+          "probes": [
+            {
+              "type": "http-json",
+              "url": "{live.url}{live.healthPath}",
+              "field": "ok",
+              "equals": true
+            }
+          ],
+          "plainWhenFailing": "The live website is not answering. Check Google Cloud Run (service blu35inventory)."
+        },
+        {
+          "id": "live-matches-repo",
+          "title": "Live app runs the latest version",
+          "plain": "The version on the website equals the version in the code.",
+          "kind": "probe",
+          "tile": "version",
+          "probes": [
+            {
+              "type": "same-value",
+              "sources": [
+                {
+                  "type": "json-field",
+                  "path": "package.json",
+                  "field": "version",
+                  "label": "code"
+                },
+                {
+                  "type": "http-json",
+                  "url": "{live.url}{live.healthPath}",
+                  "field": "version",
+                  "label": "live"
+                }
+              ]
+            }
+          ],
+          "plainWhenFailing": "The code is newer than the live app. Merge the work branch into main; the Deploy workflow ships it (or run it from GitHub → Actions)."
+        },
+        {
+          "id": "deploy-automated",
+          "title": "Deploys happen from GitHub",
+          "plain": "Merging to main builds and deploys the app by itself.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "file-exists",
+              "path": ".github/workflows/deploy.yml"
+            },
+            {
+              "type": "file-exists",
+              "path": "scripts/gcp-setup-deploy.sh"
+            }
+          ],
+          "links": [
+            {
+              "label": "Deploy runs",
+              "url": "https://github.com/Nerd305/gemini-inventory/actions/workflows/deploy.yml"
+            }
+          ]
+        },
+        {
+          "id": "deploy-live-commit",
+          "title": "Live app reports which commit it runs",
+          "plain": "The health page names the exact code commit, so nobody has to guess what is live.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "http-json",
+              "url": "{live.url}{live.healthPath}",
+              "field": "commit",
+              "pattern": "^[0-9a-f]{7,}$"
+            }
+          ],
+          "plainWhenFailing": "The live app has no commit id yet: it was last deployed by AI Studio. Run the GitHub Deploy workflow once."
+        },
+        {
+          "id": "rules-deployed",
+          "title": "Database security rules deployed",
+          "plain": "The rules file in the repo is the one Firebase is enforcing.",
+          "kind": "manual",
+          "verify": "Firebase console → Firestore → switch to the named database → Rules: the text matches firestore.rules in the repo."
+        },
+        {
+          "id": "release-tags",
+          "title": "Releases are tagged in git",
+          "plain": "Each version has a git tag so history is easy to find.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "git-tag",
+              "pattern": "^v1\\.0\\."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "setup",
+      "order": 2,
+      "title": "Pharmacy setup",
+      "plain": "The fridge, products, bins and labels exist in the app. Mirrors the setup checklist on the app's home screen.",
+      "milestones": [
+        {
+          "id": "setup-checklist-shipped",
+          "title": "Setup checklist in the app",
+          "plain": "The home screen walks a new pharmacy through setup, step by step.",
+          "kind": "probe",
+          "doneInVersion": "1.0.10",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "src/components/SetupGuide.tsx",
+              "pattern": "id: 'sync'"
+            }
+          ]
+        },
+        {
+          "id": "fridges-added",
+          "title": "Fridges added",
+          "plain": "Every fridge or cabinet exists in the app with its shelf count.",
+          "kind": "manual",
+          "verify": "App → Locations lists each fridge with the right number of shelves."
+        },
+        {
+          "id": "printing-works",
+          "title": "Label printing works",
+          "plain": "A test label comes out of the printer.",
+          "kind": "manual",
+          "verify": "App → Print Station → Send Test Print; the iMac prints it."
+        },
+        {
+          "id": "shelf-labels-printed",
+          "title": "Shelf labels on the fridge",
+          "plain": "Each shelf has its QR label stuck on the front edge.",
+          "kind": "manual",
+          "verify": "Locations → Shelf labels → printed and stuck on every shelf."
+        },
+        {
+          "id": "products-added",
+          "title": "Products added",
+          "plain": "Every product you stock exists in the app.",
+          "kind": "manual",
+          "verify": "App → Items lists every product, named the way the bin tags read."
+        },
+        {
+          "id": "bins-added",
+          "title": "Bins added",
+          "plain": "Every plastic bin exists in the app with its product and tray count.",
+          "kind": "manual",
+          "verify": "App → Bins shows one bin per basket, grouped by fridge and shelf."
+        },
+        {
+          "id": "bin-labels-printed",
+          "title": "Bin labels in the tag sleeves",
+          "plain": "Each bin has its QR label in the sleeve.",
+          "kind": "manual",
+          "verify": "Every basket's sleeve holds a printed BSKT label that scans."
+        },
+        {
+          "id": "first-count",
+          "title": "First count finished",
+          "plain": "At least one bin has been counted on a phone.",
+          "kind": "manual",
+          "verify": "Home → Today's Count shows a finished bin, or a bin shows a last-counted date."
+        },
+        {
+          "id": "complete-sync",
+          "title": "Complete & Sync done once",
+          "plain": "A count has updated product stock and written a COUNT entry.",
+          "kind": "manual",
+          "verify": "Home → Recent Activity shows a COUNT row."
+        }
+      ]
+    },
+    {
+      "id": "counting",
+      "order": 3,
+      "title": "Counting on the phone",
+      "plain": "Scan a shelf, scan a bin, tap each tray, finish, put the bin back. The core daily routine.",
+      "milestones": [
+        {
+          "id": "scan-flow",
+          "title": "Camera scanning flow",
+          "plain": "The phone camera reads shelf, bin and tray labels.",
+          "kind": "probe",
+          "doneInVersion": "1.0.9",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "src/pages/CountSession.tsx",
+              "pattern": "Html5Qrcode"
+            }
+          ]
+        },
+        {
+          "id": "live-counter",
+          "title": "Live counter during a count",
+          "plain": "The top bar shows bins, trays and vials counted so far.",
+          "kind": "probe",
+          "doneInVersion": "1.0.9",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "src/pages/CountSession.tsx",
+              "pattern": "trays · vials counted this session"
+            }
+          ]
+        },
+        {
+          "id": "tray-counter",
+          "title": "Tray counter: full, AI or by hand",
+          "plain": "Each tray can be marked full, counted by photo, or adjusted with plus and minus.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "src/components/counting/TrayCount.tsx",
+              "pattern": "countVialsInTray"
+            }
+          ]
+        },
+        {
+          "id": "all-full-finish",
+          "title": "All full and Finish",
+          "plain": "A bin of full trays finishes in two taps.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "src/components/counting/BasketDetail.tsx",
+              "pattern": "setAllTraysFull"
+            },
+            {
+              "type": "grep",
+              "path": "src/components/counting/BottomPanel.tsx",
+              "pattern": "finalizeBasketCount"
+            }
+          ]
+        },
+        {
+          "id": "put-back-move",
+          "title": "Wrong shelf offers a move",
+          "plain": "Putting a bin on a different shelf asks whether to move it there.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "src/components/counting/PutBackConfirm.tsx",
+              "pattern": "Move here"
+            }
+          ]
+        },
+        {
+          "id": "two-user-lock",
+          "title": "Two phones cannot count the same bin",
+          "plain": "The second phone is warned that the bin is already being counted.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "src/contexts/CountingSessionContext.tsx",
+              "pattern": "already being counted"
+            }
+          ]
+        },
+        {
+          "id": "complete-sync-shipped",
+          "title": "Complete & Sync",
+          "plain": "Ending a count sets product stock and writes a COUNT log entry.",
+          "kind": "probe",
+          "doneInVersion": "1.0.9",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "src/components/counting/SessionReview.tsx",
+              "pattern": "syncProductStockFromBaskets"
+            }
+          ]
+        },
+        {
+          "id": "resume-paused",
+          "title": "Resume a paused count",
+          "plain": "Leaving mid-count and coming back continues where you left off.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "md-checkbox",
+              "path": "TASKS.md",
+              "match": "Resume a paused session",
+              "checked": true
+            }
+          ]
+        },
+        {
+          "id": "move-tray-ui",
+          "title": "Move a tray between bins",
+          "plain": "Scanning a tray label while another bin is open offers to move it here.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "src/components",
+              "pattern": "moveTray\\(",
+              "include": [
+                ".tsx"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "count-field-tested",
+          "title": "Counting tested on real phones",
+          "plain": "The quick-start test checklist for counting passed on a phone.",
+          "kind": "manual",
+          "verify": "Quick start §10: 3 full trays = 75, partial tray AI count, tray label opens the tray, wrong-shelf move, two-phone warning, Complete & Sync."
+        }
+      ]
+    },
+    {
+      "id": "trays",
+      "order": 4,
+      "title": "Trays, lot numbers and use-first",
+      "plain": "Every tray carries its lot and beyond-use date, and the app always says which tray to use first.",
+      "milestones": [
+        {
+          "id": "tray-identity",
+          "title": "Each physical tray is tracked",
+          "plain": "Trays keep their identity when moved, so the lot and date travel with them.",
+          "kind": "probe",
+          "doneInVersion": "1.0.11",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "firestore.rules",
+              "pattern": "isValidTrayRecord"
+            },
+            {
+              "type": "grep",
+              "path": "src/lib/inventory.ts",
+              "pattern": "export async function createTrays"
+            }
+          ]
+        },
+        {
+          "id": "use-first",
+          "title": "Use-first ordering",
+          "plain": "Trays sort by earliest beyond-use date.",
+          "kind": "probe",
+          "doneInVersion": "1.0.11",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "src/lib/inventory.ts",
+              "pattern": "export function fifoOrder"
+            }
+          ]
+        },
+        {
+          "id": "expiring-card",
+          "title": "Expiring trays on the home screen",
+          "plain": "The home screen lists trays that are expired or expiring soon.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "src/pages/Dashboard.tsx",
+              "pattern": "Use First · Expiring BUDs"
+            }
+          ]
+        },
+        {
+          "id": "ai-label-read",
+          "title": "AI reads the compounding label",
+          "plain": "Photograph the label and the lot, date and beyond-use date fill in.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "src/pages/Bins.tsx",
+              "pattern": "readCompoundingLabel"
+            }
+          ]
+        },
+        {
+          "id": "legacy-migration",
+          "title": "Old trays migrate automatically",
+          "plain": "Bins from the early version upgrade themselves when opened.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "src/components/counting/BottomPanel.tsx",
+              "pattern": "migrateLegacyTrays"
+            }
+          ]
+        },
+        {
+          "id": "legacy-repair",
+          "title": "Repair for prototype data",
+          "plain": "Data from the first prototype can be repaired instead of wiped.",
+          "kind": "probe",
+          "doneInVersion": "1.0.14",
+          "probes": [
+            {
+              "type": "file-exists",
+              "path": "src/lib/repair.ts"
+            }
+          ]
+        },
+        {
+          "id": "single-layout-config",
+          "title": "One place for the fridge layout",
+          "plain": "The old fridge settings card is gone; shelves live on each fridge.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "grep-count",
+              "path": "src",
+              "pattern": "FridgeConfig",
+              "include": [
+                ".ts",
+                ".tsx"
+              ],
+              "op": "==",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "id": "label-ocr-samples",
+          "title": "Label reading accuracy is measured",
+          "plain": "The app records how well the AI read each label, not just the count.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "src/lib/learning.ts",
+              "pattern": "lotNumber"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "printing",
+      "order": 5,
+      "title": "Labels and the iMac print server",
+      "plain": "Labels queue up from any phone and come out of the right printer on the iMac.",
+      "milestones": [
+        {
+          "id": "print-formats",
+          "title": "Print queue with five label sizes",
+          "plain": "Zebra, Epson and Canon formats are all allowed end to end.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "firestore.rules",
+              "pattern": "'canon-integrated'"
+            },
+            {
+              "type": "grep",
+              "path": "src/shared/types.ts",
+              "pattern": "'canon-integrated'"
+            },
+            {
+              "type": "grep",
+              "path": "desktop/main/configLoader.ts",
+              "pattern": "'canon-integrated'"
+            }
+          ]
+        },
+        {
+          "id": "batch-labels",
+          "title": "Batch label printing",
+          "plain": "All shelf, bin or tray labels can be sent in one go.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "src/lib/printing.ts",
+              "pattern": "export async function sendPrintJobs"
+            }
+          ]
+        },
+        {
+          "id": "browser-fallback",
+          "title": "Browser printing fallback",
+          "plain": "A computer with the Print Station page open can print when the iMac app is not running.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "src/pages/PrintStation.tsx",
+              "pattern": "Send Test Print"
+            }
+          ]
+        },
+        {
+          "id": "print-station-phone-safe",
+          "title": "Phones never steal print jobs",
+          "plain": "Opening the print queue on a phone only shows it; printing is a deliberate switch.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "src/pages/PrintStation.tsx",
+              "pattern": "autoPrint"
+            }
+          ]
+        },
+        {
+          "id": "desktop-code",
+          "title": "iMac print server code complete",
+          "plain": "The menu-bar app that sends labels to the printers exists and compiles.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "file-exists",
+              "path": "desktop/main/printDispatcher.ts"
+            }
+          ]
+        },
+        {
+          "id": "desktop-setup-script",
+          "title": "Print server setup script runs cleanly",
+          "plain": "The first-time printer setup command has everything it needs.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "grep-count",
+              "path": "desktop/package.json",
+              "pattern": "npx ts-node",
+              "op": "==",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "id": "desktop-config-path",
+          "title": "Printer settings save in the right place",
+          "plain": "The installed app keeps its printer list where the docs say.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "desktop/main/configLoader.ts",
+              "pattern": "isPackaged"
+            }
+          ]
+        },
+        {
+          "id": "imac-printers-mapped",
+          "title": "iMac printers mapped",
+          "plain": "The printer names in the config match the printers on the iMac.",
+          "kind": "manual",
+          "verify": "On the iMac: lpstat -p names equal cupsPrinter values in printers.json."
+        },
+        {
+          "id": "dmg-built",
+          "title": "Print server installer built",
+          "plain": "A .dmg exists to install the print server on the iMac.",
+          "kind": "manual",
+          "verify": "desktop/dist/packaged/*.dmg was built with npm run package."
+        },
+        {
+          "id": "packaged-prints",
+          "title": "Installed print server prints a label",
+          "plain": "The installed app signs in and prints a test label.",
+          "kind": "manual",
+          "verify": "Open the packaged app on the iMac, sign in, Print Station → Send Test Print → label prints."
+        },
+        {
+          "id": "labels-scan-first-try",
+          "title": "Labels print at the right size and scan",
+          "plain": "Shelf, bin and tray labels come out right and scan on the first try.",
+          "kind": "manual",
+          "verify": "Quick start §10 item 2."
+        }
+      ]
+    },
+    {
+      "id": "reporting",
+      "order": 6,
+      "title": "Reports and the API",
+      "plain": "The business can pull counts, stock and expiring trays as a spreadsheet or over the API.",
+      "milestones": [
+        {
+          "id": "reporting-api",
+          "title": "Reporting API",
+          "plain": "Other systems can read counts, bins, trays and sessions.",
+          "kind": "probe",
+          "doneInVersion": "1.0.12",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "server.js",
+              "pattern": "api\\.get\\('/summary'"
+            }
+          ]
+        },
+        {
+          "id": "exports",
+          "title": "Spreadsheet exports",
+          "plain": "Reports can download a six-sheet Excel workbook or any table as CSV.",
+          "kind": "probe",
+          "doneInVersion": "1.0.12",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "src/lib/exports.ts",
+              "pattern": "export async function downloadWorkbook"
+            }
+          ]
+        },
+        {
+          "id": "api-page",
+          "title": "API page inside the app",
+          "plain": "The API reference and a health check live inside the app.",
+          "kind": "probe",
+          "doneInVersion": "1.0.13",
+          "probes": [
+            {
+              "type": "file-exists",
+              "path": "src/pages/ApiDocs.tsx"
+            }
+          ]
+        },
+        {
+          "id": "sale-webhook",
+          "title": "Sale webhook",
+          "plain": "The ordering system can lower stock when something sells.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "server.js",
+              "pattern": "/api/webhook/sale"
+            }
+          ]
+        },
+        {
+          "id": "api-pagination",
+          "title": "API pages through large data",
+          "plain": "Big tables come back in pages instead of all at once.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "server.js",
+              "pattern": "startAfter|cursor"
+            }
+          ]
+        },
+        {
+          "id": "read-only-key",
+          "title": "Separate read-only API key",
+          "plain": "The business can read data with a key that cannot change stock.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "md-checkbox",
+              "path": "TASKS.md",
+              "match": "Separate read-only API key",
+              "checked": true
+            }
+          ]
+        },
+        {
+          "id": "api-key-configured",
+          "title": "API key set in Settings",
+          "plain": "An API key exists so the reporting API answers.",
+          "kind": "manual",
+          "verify": "App → API page shows the key status as set; /api/v1/summary with the key returns numbers."
+        }
+      ]
+    },
+    {
+      "id": "mobile",
+      "order": 7,
+      "title": "Install on phones",
+      "plain": "The app installs like a real app on the Galaxy Z Fold (with the S Pen) and the iPhone, and works at the fridge.",
+      "milestones": [
+        {
+          "id": "https-live",
+          "title": "Reachable over HTTPS",
+          "plain": "Phones can open the app securely, which the camera requires.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "http-json",
+              "url": "{live.url}{live.healthPath}",
+              "field": "ok",
+              "equals": true
+            }
+          ]
+        },
+        {
+          "id": "apple-meta",
+          "title": "iPhone full-screen settings",
+          "plain": "The page tells iPhones it can run full-screen from the Home Screen.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "index.html",
+              "pattern": "apple-mobile-web-app-capable"
+            }
+          ]
+        },
+        {
+          "id": "manifest",
+          "title": "App manifest",
+          "plain": "Android Chrome can offer Install app instead of a bookmark.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "file-exists",
+              "path": "public/manifest.webmanifest"
+            },
+            {
+              "type": "grep",
+              "path": "index.html",
+              "pattern": "rel=\"manifest\""
+            }
+          ]
+        },
+        {
+          "id": "icons",
+          "title": "Home-screen icons",
+          "plain": "Both phones show a proper VialTrack icon, not a screenshot.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "file-exists",
+              "path": "public/icons/icon-192.png"
+            },
+            {
+              "type": "file-exists",
+              "path": "public/icons/icon-512.png"
+            },
+            {
+              "type": "file-exists",
+              "path": "public/apple-touch-icon.png"
+            },
+            {
+              "type": "grep",
+              "path": "index.html",
+              "pattern": "apple-touch-icon"
+            }
+          ]
+        },
+        {
+          "id": "auth-hardened",
+          "title": "Sign-in never hangs",
+          "plain": "A failed connection shows a message instead of spinning forever.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "src/contexts/AuthContext.tsx",
+              "pattern": "finally"
+            },
+            {
+              "type": "grep-count",
+              "path": "src/contexts/AuthContext.tsx",
+              "pattern": "add \"localhost\"",
+              "op": "==",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "id": "camera-robust",
+          "title": "Camera releases and restarts properly",
+          "plain": "Leaving the count screen turns the camera off; coming back turns it on.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "src/pages/CountSession.tsx",
+              "pattern": "visibilitychange"
+            },
+            {
+              "type": "grep",
+              "path": "src/pages/CountSession.tsx",
+              "pattern": "videoConstraints"
+            }
+          ]
+        },
+        {
+          "id": "photo-downscale",
+          "title": "Photos are shrunk before upload",
+          "plain": "AI photos upload fast and training samples always save.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "file-exists",
+              "path": "src/lib/image.ts"
+            },
+            {
+              "type": "grep",
+              "path": "src/components/counting/TrayCount.tsx",
+              "pattern": "downscaleImage"
+            }
+          ]
+        },
+        {
+          "id": "touch-polish",
+          "title": "Touch and stylus friendly",
+          "plain": "Buttons are big enough for a thumb or the S Pen and help opens on tap.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "src/index.css",
+              "pattern": "touch-action"
+            },
+            {
+              "type": "grep",
+              "path": "src/components/HelpTooltip.tsx",
+              "pattern": "Popover"
+            }
+          ]
+        },
+        {
+          "id": "install-docs",
+          "title": "Install instructions for staff",
+          "plain": "The quick start explains how to add the app to a phone.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "docs/QUICKSTART.md",
+              "pattern": "Install on your phone"
+            }
+          ]
+        },
+        {
+          "id": "install-fold",
+          "title": "Installed on the Galaxy Z Fold",
+          "plain": "Chrome offered Install app; it opens full-screen with the VialTrack icon.",
+          "kind": "manual",
+          "verify": "Chrome → ⋮ → Install app → open from the app drawer: no address bar, teal vial icon."
+        },
+        {
+          "id": "install-iphone",
+          "title": "Installed on the iPhone",
+          "plain": "Safari → Share → Add to Home Screen; it opens full-screen with the icon.",
+          "kind": "manual",
+          "verify": "Home Screen icon is the vial icon; the app opens without Safari's bars."
+        },
+        {
+          "id": "signin-fold",
+          "title": "Signed in inside the Android app",
+          "plain": "Google sign-in completes inside the installed app.",
+          "kind": "manual",
+          "verify": "Open the installed app → Sign in with Google → lands on Home. Note popup / redirect / stuck."
+        },
+        {
+          "id": "signin-iphone",
+          "title": "Signed in inside the iPhone app",
+          "plain": "Google sign-in completes inside the Home Screen app.",
+          "kind": "manual",
+          "verify": "Open the Home Screen app → Sign in with Google. Record: pass, returned to login, or blocked.",
+          "plainWhenFailing": "If sign-in returns to the login page, the same-origin sign-in fix becomes the next milestone."
+        },
+        {
+          "id": "camera-both",
+          "title": "Scanning works on both phones",
+          "plain": "The camera prompt appears, a bin label scans, a tray label opens the tray.",
+          "kind": "manual",
+          "verify": "Count → allow camera → scan a BSKT label and a TRAY label on each phone; note seconds to decode."
+        },
+        {
+          "id": "ai-photo-both",
+          "title": "AI photo count works on both phones",
+          "plain": "Tap AI count, take the photo, get a number and the lot/date back; the live view resumes.",
+          "kind": "manual",
+          "verify": "On each phone: tray → AI count → photo → number and label fields appear; the scanner preview is live again afterwards."
+        },
+        {
+          "id": "stylus-check",
+          "title": "S Pen taps land",
+          "plain": "Plus, minus, trays, Finish and help all respond once per tap with the stylus.",
+          "kind": "manual",
+          "verify": "With the S Pen: tap each control 10 times; no missed taps, no zoom, help opens."
+        },
+        {
+          "id": "fold-layout",
+          "title": "Fold screens measured",
+          "plain": "Both the cover screen and the inner screen show a usable layout.",
+          "kind": "manual",
+          "verify": "Record whether the inner screen shows the sidebar or the bottom bar and the window width; note anything clipped.",
+          "plainWhenFailing": "If the inner screen gets the desktop layout, the breakpoint change becomes a follow-up milestone."
+        },
+        {
+          "id": "print-station-phone-check",
+          "title": "Phone print queue is view-only",
+          "plain": "On the phones, Print Station shows Queue view only and jobs stay pending.",
+          "kind": "manual",
+          "verify": "Settings → Print queue on each phone: Queue view only; Send Test Print stays Pending until the iMac prints it."
+        },
+        {
+          "id": "killed-app-lock",
+          "title": "Killed app releases the bin",
+          "plain": "Closing the app mid-bin does not lock other phones out of that bin.",
+          "kind": "manual",
+          "verify": "Kill phone A mid-bin, scan the same bin on phone B: it offers to continue."
+        },
+        {
+          "id": "same-origin-auth",
+          "title": "Same-origin Google sign-in",
+          "plain": "Sign-in is served from the app's own address so installed apps never bounce.",
+          "kind": "probe",
+          "blockedBy": [],
+          "probes": [
+            {
+              "type": "grep",
+              "path": "server.js",
+              "pattern": "/__/auth"
+            }
+          ],
+          "plainWhenFailing": "Only needed if sign-in fails inside the installed iPhone app."
+        },
+        {
+          "id": "offline-shell",
+          "title": "Opens without signal",
+          "plain": "The installed app opens and shows the last data even with no Wi-Fi.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "src/main.tsx",
+              "pattern": "serviceWorker"
+            }
+          ],
+          "plainWhenFailing": "Planned after the deploy is owned by GitHub (the old AI Studio worker is gone then)."
+        }
+      ]
+    },
+    {
+      "id": "ai",
+      "order": 8,
+      "title": "AI counting and learning",
+      "plain": "The AI counts vials from a photo, reads the label, and the app collects corrections to get better.",
+      "milestones": [
+        {
+          "id": "ai-count",
+          "title": "AI tray counting and label reading",
+          "plain": "One photo gives the vial count and the label's lot and dates.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "src/lib/ai.ts",
+              "pattern": "export async function countVialsInTray"
+            }
+          ]
+        },
+        {
+          "id": "ai-stats",
+          "title": "Live AI accuracy stats",
+          "plain": "Settings shows how often the AI count matched the real count.",
+          "kind": "probe",
+          "doneInVersion": "1.0.7",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "src/lib/learning.ts",
+              "pattern": "getAggregateFromServer"
+            }
+          ]
+        },
+        {
+          "id": "ai-samples-product",
+          "title": "Learning samples know the product",
+          "plain": "Each AI correction is stored with the product it belongs to.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "src/components/counting/TrayCount.tsx",
+              "pattern": "productId"
+            }
+          ]
+        },
+        {
+          "id": "ai-images-storage",
+          "title": "Photos stored outside the database",
+          "plain": "Training photos go to file storage instead of the database.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "src",
+              "pattern": "firebase/storage",
+              "include": [
+                ".ts",
+                ".tsx"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "ai-insights",
+          "title": "Learning insights viewer",
+          "plain": "Admins can see the AI's biggest misses with thumbnails.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "src",
+              "pattern": "Learning Insights",
+              "include": [
+                ".tsx"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "ai-confidence",
+          "title": "Per-product confidence warning",
+          "plain": "The counter warns when the AI historically miscounts a product.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "md-checkbox",
+              "path": "TASKS.md",
+              "match": "Phase 4a",
+              "checked": true
+            }
+          ]
+        },
+        {
+          "id": "ai-fewshot",
+          "title": "AI learns from past corrections",
+          "plain": "Past corrections are fed back into the AI prompt.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "md-checkbox",
+              "path": "TASKS.md",
+              "match": "Phase 4b",
+              "checked": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "docs",
+      "order": 9,
+      "title": "Docs and this dashboard",
+      "plain": "Everything a person or an AI assistant needs to know is written down and current.",
+      "milestones": [
+        {
+          "id": "doc-readme",
+          "title": "README",
+          "plain": "The front-door document exists.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "file-exists",
+              "path": "README.md"
+            }
+          ]
+        },
+        {
+          "id": "doc-claude",
+          "title": "CLAUDE.md",
+          "plain": "Claude's rulebook for this code exists.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "file-exists",
+              "path": "CLAUDE.md"
+            }
+          ]
+        },
+        {
+          "id": "doc-gemini",
+          "title": "GEMINI.md",
+          "plain": "Gemini-based assistants have their own rulebook.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "file-exists",
+              "path": "GEMINI.md"
+            }
+          ]
+        },
+        {
+          "id": "doc-quickstart",
+          "title": "Quick start and API docs",
+          "plain": "Staff guide and API reference exist and ship inside the app.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "file-exists",
+              "path": "docs/QUICKSTART.md"
+            },
+            {
+              "type": "file-exists",
+              "path": "docs/API.md"
+            }
+          ]
+        },
+        {
+          "id": "doc-desktop",
+          "title": "Print server guide",
+          "plain": "The iMac install guide exists.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "file-exists",
+              "path": "desktop/README.md"
+            }
+          ]
+        },
+        {
+          "id": "claude-md-accurate",
+          "title": "CLAUDE.md is accurate",
+          "plain": "Known stale statements have been corrected.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "grep-count",
+              "path": "CLAUDE.md",
+              "pattern": "single-stage Docker",
+              "op": "==",
+              "value": 0
+            },
+            {
+              "type": "grep",
+              "path": "CLAUDE.md",
+              "pattern": "pm-check"
+            }
+          ]
+        },
+        {
+          "id": "tasks-md-tidy",
+          "title": "TASKS.md has no stale lines",
+          "plain": "The open-items file no longer points at deleted files.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "grep-count",
+              "path": "TASKS.md",
+              "pattern": "nginx\\.conf|test-page\\.cjs|currently red",
+              "op": "==",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "id": "branding-tidy",
+          "title": "Package name and description match the app",
+          "plain": "The project is no longer called react-example and does not promise features it lacks.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "json-field",
+              "path": "package.json",
+              "field": "name",
+              "equals": "vialtrack-ai"
+            },
+            {
+              "type": "grep-count",
+              "path": "index.html",
+              "pattern": "stock forecasting",
+              "op": "==",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "id": "dashboard-wired",
+          "title": "This dashboard is wired up",
+          "plain": "The page, its database and the Quick check button all exist.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "json-field",
+              "path": "pm/plan.json",
+              "field": "dashboard.artifactUrl",
+              "pattern": "^https://"
+            },
+            {
+              "type": "json-field",
+              "path": "pm/plan.json",
+              "field": "dashboard.triggerId",
+              "pattern": "^trig_"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "security",
+      "order": 10,
+      "title": "Security",
+      "plain": "Only your staff can read the data or spend the AI budget; no secrets ship to browsers.",
+      "milestones": [
+        {
+          "id": "gemini-key-server-side",
+          "title": "AI key stays on the server",
+          "plain": "The Gemini key is never built into the browser code.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "grep-count",
+              "path": "vite.config.ts",
+              "pattern": "process\\.env\\.GEMINI_API_KEY",
+              "op": "==",
+              "value": 0
+            },
+            {
+              "type": "grep",
+              "path": "server.js",
+              "pattern": "/api/ai/gemini"
+            }
+          ]
+        },
+        {
+          "id": "ai-proxy-auth",
+          "title": "AI calls require sign-in",
+          "plain": "Only signed-in, approved staff can use the AI.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "server.js",
+              "pattern": "verifyIdToken"
+            }
+          ]
+        },
+        {
+          "id": "rules-hardened",
+          "title": "Only invited people can join",
+          "plain": "A stranger with a Google account cannot make themselves an admin.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "grep",
+              "path": "firestore.rules",
+              "pattern": "whitelist/\\$\\(request\\.auth\\.token\\.email"
+            }
+          ],
+          "plainWhenFailing": "Scheduled as release 1.0.17 together with a rules deploy."
+        },
+        {
+          "id": "rules-hardened-live",
+          "title": "Hardened rules are live",
+          "plain": "The stricter rules are published to the database.",
+          "kind": "manual",
+          "blockedBy": [
+            "rules-hardened"
+          ],
+          "verify": "Firebase console → Firestore → named database → Rules shows the whitelist check on users create."
+        },
+        {
+          "id": "read-only-key-security",
+          "title": "Reporting cannot change stock",
+          "plain": "The key the business uses for reports cannot post sales.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "md-checkbox",
+              "path": "TASKS.md",
+              "match": "Separate read-only API key",
+              "checked": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "backlog",
+      "order": 11,
+      "title": "Cleanup backlog",
+      "plain": "Old code and loose ends that should go away.",
+      "milestones": [
+        {
+          "id": "retire-scan",
+          "title": "Retire the old scanner page",
+          "plain": "The deprecated first-generation scanner is removed.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "file-absent",
+              "path": "src/pages/Scanner.tsx"
+            }
+          ]
+        },
+        {
+          "id": "remove-outbound-push",
+          "title": "Remove the outbound stock push",
+          "plain": "The unused push to the ordering system is deleted.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "grep-count",
+              "path": "src",
+              "pattern": "pushInventoryUpdate",
+              "include": [
+                ".ts",
+                ".tsx"
+              ],
+              "op": "==",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "id": "remove-basketqr",
+          "title": "Delete dead BasketQR component",
+          "plain": "An unused component is removed.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "file-absent",
+              "path": "src/components/counting/BasketQR.tsx"
+            }
+          ]
+        },
+        {
+          "id": "remove-placeholder-ids",
+          "title": "No placeholder learning IDs",
+          "plain": "Every AI sample names a real bin and tray.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "grep-count",
+              "path": "src",
+              "pattern": "scanner_unknown|scanner_guided",
+              "include": [
+                ".ts",
+                ".tsx"
+              ],
+              "op": "==",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "id": "legacy-tray-cleanup",
+          "title": "Old tray records deleted",
+          "plain": "The database no longer holds the pre-2026 tray layout.",
+          "kind": "manual",
+          "verify": "Every bin shows migratedTraysAt; an admin deleted the old baskets/{id}/trays documents."
+        }
+      ]
+    }
+  ]
+}
