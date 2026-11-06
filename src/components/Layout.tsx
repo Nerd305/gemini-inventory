@@ -6,6 +6,7 @@ import { LayoutDashboard, ScanLine, Package, MapPin, BarChart3, LogOut, Printer,
 import QuickStartDialog, { useQuickStartDialog } from './docs/QuickStartDialog';
 import { cn } from '../lib/utils';
 import { APP_VERSION } from '../lib/version';
+import { BUILD_LABEL } from '../lib/build';
 import { collection, getDocs, query, limit } from 'firebase/firestore';
 import { db } from '../firebase';
 
@@ -50,7 +51,7 @@ export default function Layout() {
           <div className="flex justify-between h-16">
             <div className="flex items-center">
               <span className="text-xl font-bold text-blue-600">VialTrack AI</span>
-              <span className="ml-2 text-[10px] font-mono bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">v{APP_VERSION}</span>
+              <span className="ml-2 text-[10px] font-mono bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">v{APP_VERSION}{BUILD_LABEL}</span>
             </div>
             <div className="flex items-center space-x-2 sm:space-x-4">
               <Button variant="outline" size="sm" onClick={handlePing} disabled={isPinging} className="hidden sm:flex h-8">
@@ -119,7 +120,7 @@ export default function Layout() {
           })}
         </div>
         <div className="px-6 py-4 border-t">
-          <p className="text-xs text-gray-400 font-mono">v{APP_VERSION}</p>
+          <p className="text-xs text-gray-400 font-mono">v{APP_VERSION}{BUILD_LABEL}</p>
         </div>
       </div>
       

@@ -7,6 +7,7 @@ import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { APP_VERSION } from './lib/version';
+import { BUILD_LABEL } from './lib/build';
 import { Button } from './components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card';
 import { Loader2 } from 'lucide-react';
@@ -62,7 +63,7 @@ function Login() {
         <CardHeader className="text-center">
           <CardTitle className="text-2xl font-bold flex items-center justify-center">
             VialTrack AI
-            <span className="ml-2 text-[10px] font-mono bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">v{APP_VERSION}</span>
+            <span className="ml-2 text-[10px] font-mono bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">v{APP_VERSION}{BUILD_LABEL}</span>
           </CardTitle>
           <CardDescription>Sign in to manage medication inventory</CardDescription>
         </CardHeader>

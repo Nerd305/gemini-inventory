@@ -5,6 +5,9 @@
  *  2. Inbound API bridge: POST /api/webhook/sale decrements stock when the ordering system sells.
  *  3. Read-only reporting API (GET /api/v1/...) so the business can pull counts, bins, trays
  *     (with lot / BUD for FIFO) and count history, as JSON or CSV. See docs/API.md.
+ *  4. Gemini proxy (POST /api/ai/gemini/...): the browser never holds the Gemini key. It sends its
+ *     Firebase ID token; this server checks who it is, adds the key from the environment (Secret
+ *     Manager on Cloud Run) and forwards the call to Google.
  *
  * Auth for 2 and 3: `Authorization: Bearer <apiKey>` where the key is the API key saved under
  * Settings → API Bridge (config/appSettings.apiBridgeConfig.apiKey), or VIALTRACK_API_KEY env.
@@ -14,6 +17,7 @@ import fs from 'fs';
 import crypto from 'crypto';
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
+import { getAuth } from 'firebase-admin/auth';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -21,7 +25,8 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-dotenv.config();
+// .env.local first (the same file Vite reads), then .env; real environment variables always win.
+dotenv.config({ path: ['.env.local', '.env'], quiet: true });
 
 function readJsonSafe(file) {
   try {
@@ -39,19 +44,199 @@ const appletConfig = readJsonSafe(path.join(__dirname, 'firebase-applet-config.j
 const DATABASE_ID = process.env.FIRESTORE_DATABASE_ID || appletConfig?.firestoreDatabaseId || '(default)';
 
 const app = express();
-app.use(express.json());
+// express.json() is installed further down, AFTER the Gemini proxy, so image-sized proxy bodies are
+// neither parsed here nor capped at 100 kB.
 
 // Initialize Firebase Admin via Application Default Credentials.
 // Locally: GOOGLE_APPLICATION_CREDENTIALS=<service-account.json>. On Cloud Run the metadata server provides it.
 let adminApp = null;
 try {
-  adminApp = initializeApp();
+  // The project id is what verifyIdToken checks tokens against; take it from the committed web config.
+  adminApp = initializeApp({ projectId: appletConfig?.projectId || process.env.GOOGLE_CLOUD_PROJECT });
   console.log(`Firebase Admin initialized (database: ${DATABASE_ID}).`);
 } catch (error) {
   console.warn('Firebase Admin app initialization failed:', error.message);
   console.warn('Set GOOGLE_APPLICATION_CREDENTIALS to a service account key file.');
 }
 const db = adminApp ? getFirestore(adminApp, DATABASE_ID) : getFirestore(DATABASE_ID);
+
+// ---------------------------------------------------------------------------
+// Gemini proxy
+// ---------------------------------------------------------------------------
+
+const GEMINI_UPSTREAM = 'https://generativelanguage.googleapis.com';
+// Only the call the app makes. Widen this when a new model or method is actually adopted.
+const GEMINI_ALLOWED = /^\/v1beta\/models\/gemini-2\.5-flash:(generateContent|countTokens)$/;
+const geminiKey = () => process.env.GEMINI_PROXY_KEY || process.env.GEMINI_API_KEY || '';
+// Same two bootstrap admins as firestore.rules and src/contexts/AuthContext.tsx.
+const BOOTSTRAP_ADMINS = ['duval.villegas@mdexam.com', 'duval.villegas@gmail.com'];
+const FORWARD_HEADERS = ['content-type', 'accept', 'x-goog-api-client', 'x-server-timeout'];
+const adminAuth = adminApp ? getAuth(adminApp) : null;
+
+// Google-shaped error body so the @google/genai SDK shows our message instead of a generic one.
+const geminiError = (res, code, status, message) => res.status(code).json({ error: { code, message, status } });
+
+// Who may spend the Gemini key: a verified Google sign-in that is a bootstrap admin or on the
+// whitelist (whitelist/{email} is admin-write-only). Positive answers are cached for 5 minutes.
+const roleCache = new Map(); // uid -> { role, at }
+async function aiRoleFor(decoded) {
+  const hit = roleCache.get(decoded.uid);
+  if (hit && Date.now() - hit.at < 5 * 60_000) return hit.role;
+  const email = String(decoded.email || '').toLowerCase();
+  if (!decoded.email_verified || !email) return null;
+  let role = null;
+  if (BOOTSTRAP_ADMINS.includes(email)) {
+    role = 'admin';
+  } else {
+    const wl = await db.collection('whitelist').doc(email).get();
+    if (wl.exists) {
+      const u = await db.collection('users').doc(decoded.uid).get();
+      role = (u.exists && u.data().role) || wl.data().role || 'staff';
+    }
+  }
+  if (role !== 'staff' && role !== 'admin') return null;
+  roleCache.set(decoded.uid, { role, at: Date.now() });
+  return role;
+}
+
+const aiHits = new Map(); // uid -> request timestamps in the last minute (per instance; the camera HUD polls every 2 s)
+function underRateLimit(uid, limit = 60) {
+  const now = Date.now();
+  const hits = (aiHits.get(uid) || []).filter((t) => now - t < 60_000);
+  const ok = hits.length < limit;
+  if (ok) hits.push(now);
+  aiHits.set(uid, hits);
+  return ok;
+}
+
+// Everything that needs no request body is checked first, so an anonymous caller can never make this
+// server buffer a large upload.
+async function requireAiUser(req, res, next) {
+  try {
+    if (!geminiKey()) return geminiError(res, 503, 'UNAVAILABLE', 'AI is not configured on the server (the Gemini key is missing).');
+    if (req.method !== 'POST' || !GEMINI_ALLOWED.test(req.path)) {
+      return geminiError(res, 404, 'NOT_FOUND', `Not proxied: ${req.method} ${req.path}`);
+    }
+    if (!adminAuth) return geminiError(res, 503, 'UNAVAILABLE', 'The server could not start Firebase Admin, so sign-ins cannot be checked.');
+    const header = req.headers.authorization || '';
+    const idToken = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+    if (!idToken) return geminiError(res, 401, 'UNAUTHENTICATED', 'Sign in to use AI features.');
+    let decoded;
+    try {
+      decoded = await adminAuth.verifyIdToken(idToken);
+    } catch {
+      return geminiError(res, 401, 'UNAUTHENTICATED', 'Your sign-in has expired. Sign out, sign in again, then retry.');
+    }
+    let role;
+    try {
+      role = await aiRoleFor(decoded);
+    } catch (error) {
+      console.error('Gemini proxy: could not read user roles:', error);
+      return geminiError(res, 500, 'INTERNAL', 'The server cannot read user roles right now (database credentials).');
+    }
+    if (!role) return geminiError(res, 403, 'PERMISSION_DENIED', 'Your account is not allowed to use AI features.');
+    if (!underRateLimit(decoded.uid)) return geminiError(res, 429, 'RESOURCE_EXHAUSTED', 'Too many AI requests. Wait a minute and try again.');
+    next();
+  } catch (error) {
+    console.error('Gemini proxy error:', error);
+    geminiError(res, 500, 'INTERNAL', 'The AI proxy hit an unexpected error.');
+  }
+}
+
+async function forwardToGemini(req, res) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 90_000);
+  res.on('close', () => controller.abort()); // the phone gave up: stop paying for the answer
+  try {
+    const headers = { 'x-goog-api-key': geminiKey() };
+    for (const h of FORWARD_HEADERS) if (typeof req.headers[h] === 'string') headers[h] = req.headers[h];
+    const url = new URL(req.path, GEMINI_UPSTREAM);
+    if (req.query.alt === 'sse') url.searchParams.set('alt', 'sse'); // the client's own `key=` parameter is never forwarded
+    const upstream = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: Buffer.isBuffer(req.body) ? req.body : undefined,
+      signal: controller.signal,
+    });
+    res.status(upstream.status);
+    const ct = upstream.headers.get('content-type');
+    if (ct) res.setHeader('Content-Type', ct);
+    res.setHeader('Cache-Control', 'no-store');
+    if (!upstream.body) return res.end();
+    for await (const chunk of upstream.body) res.write(chunk);
+    res.end();
+  } catch (error) {
+    if (res.headersSent) return res.end();
+    console.error('Gemini proxy upstream error:', error?.name === 'AbortError' ? 'timed out or cancelled' : error);
+    geminiError(res, 502, 'UNAVAILABLE', 'Could not reach the AI service. Try again.');
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const geminiProxy = express.Router();
+geminiProxy.use(requireAiUser);
+geminiProxy.use(express.raw({ type: 'application/json', limit: '20mb', inflate: false }));
+geminiProxy.post('*', forwardToGemini);
+// Oversized or malformed bodies answer in JSON, not Express's HTML error page.
+geminiProxy.use((err, req, res, _next) => geminiError(res, err.status || 500, 'INVALID_ARGUMENT', err.message || 'Bad request'));
+app.use('/api/ai/gemini', geminiProxy);
+
+// Old tabs and installed apps still running the AI-Studio-era bundle call /gemini-api-proxy through the
+// AI Studio service worker; tell them to reload instead of letting the app shell answer with HTML.
+app.use('/gemini-api-proxy', (req, res) =>
+  geminiError(res, 409, 'FAILED_PRECONDITION', 'VialTrack was updated. Close and reopen the app, then try again.'),
+);
+
+// AI Studio's deploy wrapper registered /_service-worker.js on every phone that opened the app. Serve a
+// worker that removes itself so those browsers drop it on their next visit (without this the app shell
+// answers /_service-worker.js with HTML, the update fails and the old worker stays installed).
+app.get('/_service-worker.js', (req, res) => {
+  res
+    .type('application/javascript')
+    .set('Cache-Control', 'no-store')
+    .send("self.addEventListener('install',()=>self.skipWaiting());self.addEventListener('activate',(e)=>e.waitUntil(self.registration.unregister()));");
+});
+
+// Everything below receives parsed JSON bodies.
+app.use(express.json());
+
+// Is the Gemini key present and accepted by Google? Checked at start and re-checked (at most once a
+// minute) while it is not "ok"; shown on /api/v1/health so a deploy can be smoke-tested.
+let geminiStatus = geminiKey() ? 'checking' : 'missing';
+let geminiCheckedAt = 0;
+async function checkGeminiKey() {
+  geminiCheckedAt = Date.now();
+  if (!geminiKey()) {
+    geminiStatus = 'missing';
+    return;
+  }
+  try {
+    const r = await fetch(`${GEMINI_UPSTREAM}/v1beta/models/gemini-2.5-flash`, {
+      headers: { 'x-goog-api-key': geminiKey() },
+      signal: AbortSignal.timeout(10_000),
+    });
+    geminiStatus = r.ok ? 'ok' : `invalid:${r.status}`;
+  } catch {
+    geminiStatus = 'unreachable';
+  }
+}
+
+let firestoreCheck = { at: 0, value: 'unknown' };
+async function checkFirestore() {
+  if (Date.now() - firestoreCheck.at < 60_000) return firestoreCheck.value;
+  let value = 'ok';
+  try {
+    await Promise.race([
+      db.collection('config').doc('appSettings').get(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8_000)),
+    ]);
+  } catch {
+    value = 'error';
+  }
+  firestoreCheck = { at: Date.now(), value };
+  return value;
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -347,8 +532,20 @@ async function buildSessions({ since, until, status } = {}) {
 
 const api = express.Router();
 
-api.get('/health', (req, res) => {
-  res.json({ ok: true, service: 'vialtrack', version: APP_VERSION, database: DATABASE_ID, time: new Date().toISOString() });
+api.get('/health', async (req, res) => {
+  if (geminiStatus !== 'ok' && Date.now() - geminiCheckedAt > 60_000) checkGeminiKey(); // fire and forget
+  const body = {
+    ok: true,
+    service: 'vialtrack',
+    version: APP_VERSION,
+    commit: process.env.GIT_SHA || null, // set by the deploy workflow; null means it was not deployed by GitHub
+    revision: process.env.K_REVISION || null, // set by Cloud Run
+    gemini: geminiStatus,
+    database: DATABASE_ID,
+    time: new Date().toISOString(),
+  };
+  if (req.query.deep === '1') body.firestore = await checkFirestore();
+  res.json(body);
 });
 
 api.use(requireApiKey);
@@ -581,11 +778,14 @@ app.use(express.static(path.join(__dirname, 'dist')));
 
 // SPA fallback for React Router
 app.get('*', (req, res) => {
+  // A missing file (manifest, icon, script) must not come back as the app page with status 200.
+  if (path.extname(req.path) || req.path.startsWith('/__/')) return res.status(404).type('text/plain').send('Not found');
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
+  checkGeminiKey();
   console.log(`VialTrack v${APP_VERSION} on port ${PORT}`);
   console.log(`Web app:        http://localhost:${PORT}`);
   console.log(`Reporting API:  http://localhost:${PORT}/api/v1/health`);

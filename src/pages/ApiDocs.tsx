@@ -103,7 +103,7 @@ export default function ApiDocs() {
         );
       }
       const json = await res.json();
-      setHealth({ state: 'ok', text: `API v${json.version} is up · database ${json.database}` });
+      setHealth({ state: 'ok', text: `API v${json.version}${json.commit ? ` · ${String(json.commit).slice(0, 7)}` : ''} is up · database ${json.database}` });
     } catch (e) {
       setHealth({ state: 'error', text: e instanceof Error ? e.message : 'Request failed' });
     }

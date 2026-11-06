@@ -15,7 +15,7 @@ an API or as a spreadsheet.
 | Install the label print server on the iMac | [desktop/README.md](desktop/README.md) and the section below |
 | Understand the code before changing it | [CLAUDE.md](CLAUDE.md) (architecture notes), [TASKS.md](TASKS.md) (open items) |
 
-Live app: https://blu35inventory-156214809618.us-west1.run.app (Cloud Run service `blu35inventory`, us-west1, deployed from the AI Studio project imported from this repo). The earlier `vialtrack-ai` service is retired.
+Live app: https://blu35inventory-156214809618.us-west1.run.app (Cloud Run service `blu35inventory`, us-west1, deployed by GitHub Actions from `main`; see "Deploy the web app" below). The earlier `vialtrack-ai` service is retired.
 
 ## What is in this repository
 
@@ -46,7 +46,8 @@ Fridge (location, N shelves)
 - Node.js 22 and npm
 - A Google account on the whitelist (the two bootstrap admin emails are hard-coded in
   `firestore.rules` and `src/contexts/AuthContext.tsx`; everyone else is invited from **Settings → Users**)
-- Gemini API key (AI vial counting and label reading)
+- Gemini API key (AI vial counting and label reading). In production it lives in Google Secret Manager and never reaches
+  the browser; locally it goes in `.env.local`
 - Firebase project `gen-lang-client-0920383400`, Firestore database
   `ai-studio-198437a8-7e10-4c8b-9a00-22acac4c2d1f` (a **named** database, not `(default)`)
 
@@ -54,7 +55,7 @@ Fridge (location, N shelves)
 
 ```bash
 npm install
-echo 'GEMINI_API_KEY=your-key' > .env.local   # git-ignored; Vite bakes it into the bundle
+echo 'GEMINI_API_KEY=your-key' >> .env.local  # git-ignored; used only by the local AI proxy, never put in the bundle
 npm run dev                                   # http://localhost:3000
 npm run lint                                  # tsc type-check (the only automated check)
 npm run build                                 # production bundle → dist/
@@ -76,20 +77,46 @@ firebase deploy --only firestore:rules --project gen-lang-client-0920383400
 Or paste the file into Firebase Console → Firestore → **switch the database dropdown to the named
 database** → Rules → Publish.
 
-### 4. Deploy the web app (Cloud Run)
+### 4. Deploy the web app (Cloud Run, from GitHub)
 
-The repo has a multi-stage `Dockerfile`; nothing deploys automatically from `main`.
+Merging to `main` deploys the app: the **CI** workflow (type-check + build) runs, and when it passes the
+**Deploy** workflow (`.github/workflows/deploy.yml`) builds the image, pushes it to Artifact Registry, starts a
+new Cloud Run revision with **no traffic**, smoke-tests it (right version and commit, Gemini key accepted,
+database reachable, AI proxy refusing anonymous calls) and only then moves traffic to it. A bad build never
+reaches staff. The Deploy workflow does nothing until you finish the one-time setup below.
 
-- **AI Studio**: pull the latest `main` from GitHub into the workspace, then Deploy. AI Studio injects
-  `GEMINI_API_KEY` at build time.
-- **gcloud** from a checkout of `main` with `.env.local` present:
+**One-time setup (about 10 minutes, no coding):**
 
-  ```bash
-  gcloud run deploy blu35inventory --source . --region us-west1 --project gen-lang-client-0920383400
-  ```
+1. Open [Google Cloud Shell](https://shell.cloud.google.com) signed in as the project owner and run:
 
-Confirm the deploy took: the version badge next to "VialTrack AI" on the login page matches
-`package.json`, and `GET /api/v1/health` returns the same version.
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/Nerd305/gemini-inventory/main/scripts/gcp-setup-deploy.sh -o gcp-setup-deploy.sh
+   bash gcp-setup-deploy.sh
+   ```
+
+   It turns on the Google services, creates the image store, stores your Gemini key in Secret Manager (it asks
+   for it once and checks it with Google), creates a deployer account and a keyless trust that only this
+   repository's `main` branch can use, and saves a copy of the current service as a rollback reference. It is
+   safe to run again.
+2. Add the two values it prints under GitHub → Settings → Secrets and variables → Actions → **Secrets**
+   (`GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT`) and the **variable** `DEPLOY_ENABLED` = `true`.
+3. Wait about five minutes, then GitHub → Actions → **Deploy** → **Run workflow** (branch `main`).
+
+**Day to day:** merge to `main` and watch the Deploy run. Confirm with `GET /api/v1/health`: `version`, `commit`
+(the exact code commit), `gemini: "ok"`, and `?deep=1` adds `firestore: "ok"`. The same commit id shows after
+the version badge in the app.
+
+**Never press Deploy in Google AI Studio.** It would overwrite the service with its own wrapper and an old
+copy of the code. If that happens, `/api/v1/health` shows `"commit": null`; run the Deploy workflow again.
+
+**Rollback:** set `DEPLOY_ENABLED` to `false` first, then in the Cloud Run console open `blu35inventory` →
+Revisions → the previous revision → *Manage traffic* → 100 % → Save (or
+`gcloud run services update-traffic blu35inventory --region us-west1 --to-revisions <old-revision>=100`). Fix problems
+forward on `main`; do not revert the merge that added the workflow.
+
+**If the Google trust step fails** with a 403 right after setup, wait a few minutes and re-run the job. A
+long-lived service-account key (`credentials_json` on the `google-github-actions/auth` step, from a
+`GCP_SA_KEY` secret) also works but is less safe; prefer the keyless trust.
 
 ### 5. Label printing (iMac print server)
 
@@ -140,8 +167,8 @@ The dashboard shows a **Setup progress** checklist that walks through: fridges (
 | `FIRESTORE_DATABASE_ID` | Only to override the database from `firebase-applet-config.json`. Leave unset. |
 | `VIALTRACK_API_KEY` | Only if you want the reporting API key to come from the environment instead of Settings → API Bridge. |
 | `GOOGLE_APPLICATION_CREDENTIALS` | Local runs of `node server.js` only (path to a service-account JSON). Never on Cloud Run, which supplies credentials itself. |
-
-If AI Studio asks for these when importing the repo, leave the values blank.
+| `GEMINI_PROXY_KEY` / `GEMINI_API_KEY` | The Gemini key used by the server-side AI proxy. On Cloud Run it is the Secret Manager secret `gemini-api-key`, mounted as `GEMINI_PROXY_KEY` by the deploy; locally put `GEMINI_API_KEY` in `.env.local`. It is never baked into the web bundle. |
+| `GIT_SHA` | Set by the deploy; shown as `commit` on `/api/v1/health` and after the version badge. |
 
 ## Development notes
 
@@ -149,6 +176,10 @@ If AI Studio asks for these when importing the repo, leave the values blank.
   runs lint + build for the web app and lint for the desktop app on every push and pull request.
 - Bump the version with `node scripts/bump-version.js` whenever you ship a change; it updates
   `package.json`, `src/lib/version.ts` and the `<title>`.
+- AI calls go browser → `/api/ai/gemini` (this server, after checking the Firebase sign-in and the whitelist) →
+  Google. `npm run dev` has its own small proxy for the same path (needs `GEMINI_API_KEY` in `.env.local`).
+- The server removes the old Google AI Studio service worker from phones (`/_service-worker.js`); do not add a
+  service worker of your own without checking that route.
 - `/scan` is the deprecated first-generation scanner (still reachable from Settings → Legacy scanner);
   `/count` is the real counting flow.
 - `firebase-blueprint.json` documents the Firestore document shapes; `firestore.rules` is authoritative.

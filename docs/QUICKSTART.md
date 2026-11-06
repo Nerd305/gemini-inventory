@@ -188,12 +188,12 @@ After any change: `npm run lint`, `npm run build`, `node scripts/bump-version.js
 | Symptom | Likely cause |
 | --- | --- |
 | Blank page or "Sign-in failed: unauthorized domain" | Add the domain under Firebase Auth → Authorized domains |
-| "AI features are unavailable" | `GEMINI_API_KEY` was not set when the app was built |
+| "AI is not configured on the server" | The Gemini key secret (`gemini-api-key`) is missing or Google rejected it; re-run `scripts/gcp-setup-deploy.sh` and check `/api/v1/health` shows `"gemini": "ok"` |
 | Trays won't save / "Missing or insufficient permissions" | Firestore rules not deployed for the `trays` collection, or the bin is from the old app: use **Repair** on the Bins page |
 | Bins page shows an amber "came from the old app" banner | Data written by the 2026 prototype. Repair it (keeps the old totals) or wipe it under Settings → Danger zone and set up fresh |
 | Scanning a bin says "Bin not found" | Label printed from a different database or the bin was deleted; reprint from Bins |
 | Nothing prints | Print server not running, or no Print Station tab with **Auto-print on this device** switched on; check `lpstat -p` names in `printers.json` |
-| Version badge is old after a deploy | AI Studio deployed its workspace copy, not GitHub `main`; pull first |
+| Version badge is old after a merge | Check GitHub → Actions → Deploy. If `/api/v1/health` shows `"commit": null`, someone pressed Deploy in Google AI Studio: run the Deploy workflow again |
 | API answers 503 | No API key set under Settings → API Bridge |
 | Sign-in never returns inside the installed iPhone app | Known limit until sign-in is served from the app's own address; sign in from Safari and tell an admin |
 | Chrome offers only "Add to Home screen", not "Install app" | The manifest did not load: open `/manifest.webmanifest` in the tab; it must show JSON, not the app page |

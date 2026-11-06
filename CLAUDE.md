@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Two independent applications share one Firestore database and a `src/shared/` code folder:
 
-- **Root (`/`)** — React 19 + Vite + Tailwind 4 web app (VialTrack AI, formerly MedInventory), packaged into a Node container that also runs an Express webhook backend. Built for Google AI Studio; uses Gemini via `@google/genai` and Firebase Auth + Firestore.
+- **Root (`/`)** — React 19 + Vite + Tailwind 4 web app (VialTrack AI, formerly MedInventory), packaged into a Node container that also runs an Express webhook backend. Deployed to Cloud Run by GitHub Actions (see "Deploying" below); uses Gemini via `@google/genai` (through the server-side proxy in `server.js`) and Firebase Auth + Firestore.
 - **`desktop/`** — Electron + Vite + TypeScript macOS print server (VialTrack Print Server). Runs on the pharmacy iMac, subscribes to the Firestore `printJobs` queue, and routes each job to a physical printer via CUPS (`lp`).
 - **`pm/`** — project-manager dashboard kit (`plan.json` chapters/milestones/probes, `probe.mjs` runner, `dashboard.html` artifact page template, `README.md` reuse guide). Generic and repo-portable; the `/pm-check` skill in `.claude/skills/` fills the dashboard. Never ships in the app image.
 
@@ -22,7 +22,7 @@ Web app (from repo root):
 
 ```bash
 npm install
-npm run dev      # vite on :3000, HMR disabled when DISABLE_HMR=true (AI Studio)
+npm run dev      # vite on :3000 (also proxies /api/ai/gemini to Google with GEMINI_API_KEY from .env.local); HMR disabled when DISABLE_HMR=true
 npm run build    # vite build → dist/
 npm run start    # node server.js — Express on :8080 serves dist/ + /api/webhook/sale
 npm run lint     # tsc --noEmit (type-check only; no ESLint configured)
@@ -52,7 +52,7 @@ User-facing docs live in `docs/`: [QUICKSTART.md](docs/QUICKSTART.md) (staff/tes
 
 ## Environment & config
 
-- `GEMINI_API_KEY` is required by `src/lib/ai.ts`. Vite injects it via `define` in [vite.config.ts](vite.config.ts#L11) as `process.env.GEMINI_API_KEY`. In AI Studio this is auto-injected; locally, put it in `.env.local`.
+- **`GEMINI_API_KEY` is server-only and is never defined into the browser bundle.** `src/lib/ai.ts` calls same-origin `/api/ai/gemini` with the signed-in user's Firebase ID token; `server.js` verifies it, requires a verified email that is a bootstrap admin or on `whitelist/{email}`, adds the key and forwards to `generativelanguage.googleapis.com` (60 requests/min/user, only `gemini-2.5-flash` `generateContent`/`countTokens`). On Cloud Run the key is the Secret Manager secret `gemini-api-key`, mounted as `GEMINI_PROXY_KEY`; locally put `GEMINI_API_KEY` in `.env.local` (read by `node server.js` and by the Vite dev proxy). Never add it to `vite.config.ts` `define`. `src/lib/build.ts` holds the commit shown after the version badge (`GIT_SHA`).
 - `firebase-applet-config.json` is committed and loaded directly by [src/firebase.ts](src/firebase.ts#L4). It includes a non-default `firestoreDatabaseId` (`ai-studio-198437a8-7e10-4c8b-9a00-22acac4c2d1f`) — always pass it to `getFirestore(app, firebaseConfig.firestoreDatabaseId)`. The same database ID is also declared in [firebase.json](firebase.json) for the rules deploy target.
 - The Firebase project ID is `gen-lang-client-0920383400` (see [.firebaserc](.firebaserc)). The two names look unrelated; do not confuse the project ID with the database ID.
 - `firebase-blueprint.json` documents the Firestore entity schemas (User, Location, Shelf, Product, Basket, Tray, InventoryLog, CountingSession, LearningDataEntry, AppSettings, FridgeConfig). **Rules are authoritative** for on-disk shapes (`Basket` requires `name`, `trayCount`, `vialsPerTray`, `looseVials`, `qrCode`; `Tray` requires `slot`, `count`).
@@ -73,17 +73,23 @@ Routes are declared in [src/App.tsx](src/App.tsx). `/count` is full-screen (outs
 
 ## Web server / API backend ([server.js](server.js))
 
-`server.js` is a small Express app that does three jobs in a single process:
+`server.js` is a small Express app that does four jobs in a single process:
 
 1. **Static SPA host** — serves the Vite build (`dist/`) with a SPA fallback for React Router. Unknown `/api/*` routes return JSON 404 instead of the SPA.
 2. **Inbound API bridge** — `POST /api/webhook/sale` decrements product stock when an external ordering system reports a sale (requires `apiBridgeConfig.enabled`). Runs a Firestore transaction that updates `products/{id}.currentStock` and writes an `inventoryLogs` entry with `userId: 'system'`.
 3. **Read-only reporting API** — `GET /api/v1/{health,summary,products,bins,trays,counts,sessions,sessions/:id,export.csv}`; documented in [docs/API.md](docs/API.md). Rows are built from full collection reads (5k cap) and decorated with product/location/user names; trays come back in FIFO order with `fifoRank`.
+
+4. **Gemini proxy** — `POST /api/ai/gemini/v1beta/models/gemini-2.5-flash:generateContent` (see Environment & config). Mounted before `express.json()` so image bodies stream through (20 MB cap); authentication runs before any body is read. Old bundles from the AI Studio era get a JSON 409 on `/gemini-api-proxy/*`, and `/_service-worker.js` serves a worker that unregisters itself (it removes AI Studio's old one from phones). Missing files (anything with an extension) return 404, not the app shell. `GET /api/v1/health` reports `version`, `commit` (`GIT_SHA`; `null` means the service was not deployed by the GitHub workflow), `revision` (Cloud Run), `gemini` (`ok`/`missing`/`invalid:<status>`) and, with `?deep=1`, `firestore`.
 
 Auth for 2 and 3: `Authorization: Bearer <key>` where key = `VIALTRACK_API_KEY` env or `config/appSettings.apiBridgeConfig.apiKey` (timing-safe compare, 30 s settings cache). **The server must open the named database**: it reads `firestoreDatabaseId` from `firebase-applet-config.json` (copied into the image by the Dockerfile) or `FIRESTORE_DATABASE_ID`; `getFirestore()` without an ID would hit the empty `(default)` database.
 
 Listens on `process.env.PORT || 8080`. Initialized via `firebase-admin` using ADC — locally set `GOOGLE_APPLICATION_CREDENTIALS` to a service-account key, on Cloud Run / GCE the metadata server provides it automatically.
 
 Deployment is a two-stage Docker build: stage 1 (`node:22-alpine AS build`) runs `npm run build`; stage 2 (`node:22-alpine`) installs production dependencies and copies `dist/`, `server.js` and `firebase-applet-config.json`, then runs `node server.js`. There is no separate nginx layer (the previous `nginx.conf` was removed).
+
+## Deploying
+
+Merging to `main` runs CI, then `.github/workflows/deploy.yml` (inert until the repository variable `DEPLOY_ENABLED` is `true`): build the image with `--build-arg GIT_SHA`, push to Artifact Registry (`us-west1-docker.pkg.dev/gen-lang-client-0920383400/vialtrack/web`), deploy a no-traffic revision tagged `candidate`, smoke-test it (version, commit, `gemini: ok`, `firestore: ok`, clean-up service worker, anonymous AI call → 401), then move traffic. Google auth is keyless (Workload Identity Federation, locked to this repo's `main`). One-time setup is `scripts/gcp-setup-deploy.sh` run in Cloud Shell (README "Deploy the web app"). **Never press Deploy in Google AI Studio**; `commit: null` in `/api/v1/health` means that happened, and the fix is to re-run the Deploy workflow. Rollback: set `DEPLOY_ENABLED=false`, then shift traffic to the previous revision; fix forward on `main`, never revert the workflow away.
 
 ## API bridge (bidirectional)
 

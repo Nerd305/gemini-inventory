@@ -8,6 +8,7 @@ Tier numbers match the audit framing: lower tier = higher severity.
 
 ## Recently shipped
 
+- **v1.0.20** — Own the deploy + installable on phones. **Deploy:** the Gemini key is now server-side (`/api/ai/gemini` proxy in `server.js`: Firebase sign-in + whitelist check, 60 req/min/user, one model; the key is no longer defined into the web bundle); `.github/workflows/deploy.yml` builds, deploys a no-traffic Cloud Run revision, smoke-tests it and then switches traffic (inert until `DEPLOY_ENABLED=true`); `scripts/gcp-setup-deploy.sh` does the one-time Google setup from Cloud Shell; `/api/v1/health` reports `commit`, `revision`, `gemini` (and `firestore` with `?deep=1`); the app shows the commit after the version badge; the old AI Studio service worker is removed from phones. **Phones:** web app manifest + vial icons (`scripts/make-icons.mjs`); Print Station auto-print is a per-device opt-in (default off) so phones can no longer take labels from the iMac; sign-in never hangs and explains itself; camera releases/restarts and asks for 1080p; photos are shrunk before upload; a bin locked by a closed app can be overridden; 44px steppers, tap-to-open help, no double-tap zoom. Rules hardening for `users` creation is the next release (needs a rules deploy to the named database).
 - **v1.0.19** — Project-manager dashboard kit: `pm/` (plan.json chapters/milestones/probes, probe.mjs runner, emit-docs.mjs, dashboard.html artifact page, README), the `/pm-check` skill in `.claude/skills/`, `GEMINI.md`, and the "after shipping, run /pm-check" rule in CLAUDE.md. The dashboard lives at a private claude.ai artifact and refreshes itself from a scheduled task (writes only what changed, one document at a time; anything it cannot re-verify keeps its last verified result, labelled).
 
 - **v1.0.15** — `isValidConfig` now accepts `serverTimestamp()` and partial merge writes (saving the API key / fridges from Settings was rejected by the rules; AI Studio's import agent found and deployed the same fix). Vite dev server declares `allowedHosts: true` for the AI Studio preview proxy; `.env.example` trimmed to build-time vars so AI Studio stops prompting for server-only ones. Merged the AI Studio workspace commit (rename to VialTrack AI, `metadata.json` capabilities): restored the two `package-lock.json` files it deleted, finished the rename on the login screen and header, and made the Dockerfile fall back to `npm install` when a lockfile is missing.
@@ -30,7 +31,7 @@ Tier numbers match the audit framing: lower tier = higher severity.
 
 ---
 
-## Tier 1 — Blocking (`npm run lint` is currently red on these)
+## Tier 1 — Blocking (closed; `npm run lint` is green)
 
 - [x] **lastScanRef undefined** — [src/contexts/CountingSessionContext.tsx](src/contexts/CountingSessionContext.tsx). The dedupe ref was scaffolded out, causing a runtime ReferenceError on the first QR scan. **Fixed in v1.0.8.**
 - [x] **apibridge import path** — [src/lib/apibridge.ts:2](src/lib/apibridge.ts#L2). `import { db } from './firebase'` should be `'../firebase'`. One-line fix.
@@ -44,8 +45,8 @@ Tier numbers match the audit framing: lower tier = higher severity.
 
 ## Tier 3 — Unwired infrastructure (real code, no deploy path)
 
-- [x] **[server.js](server.js) — sale-event webhook backend.** Working `firebase-admin` express server on `:3001` with auth + transactional inventory decrement. Not deployed: no `start` script, not in [Dockerfile](Dockerfile), no `/api/*` proxy in [nginx.conf](nginx.conf), no Hosting/Functions block in [firebase.json](firebase.json). Architectural decision needed: Cloud Run? Firebase Functions? Drop the feature? -> **Resolved by migrating to a Node server in Dockerfile that serves both the UI and the webhook API.**
-- [x] **[test-page.cjs](test-page.cjs)** — one-off Playwright smoke test against `localhost:3000`. Not in CI, no test runner. Either turn into a real e2e harness or delete. -> **Deleted.**
+- [x] **[server.js](server.js) — sale-event webhook backend.** Resolved: one Node server in the Docker image serves the UI, the webhook and the reporting API, and GitHub Actions deploys it to Cloud Run.
+- [x] **One-off Playwright smoke test** — deleted.
 
 ## Tier 4 — Schema / documentation drift
 
@@ -61,11 +62,11 @@ Tier numbers match the audit framing: lower tier = higher severity.
 - [x] **Scanner.tsx isn't recording learning samples** — [src/pages/Scanner.tsx:430](src/pages/Scanner.tsx#L430) calls `countVialsInTray` but never writes to `learningData`. Half the AI counts in the system are missing from the dataset.
 - [x] **App version display** — [src/lib/version.ts](src/lib/version.ts) is mirrored from `package.json` via `scripts/bump-version.js`. Verify [.firebaserc](.firebaserc) project (`gen-lang-client-0920383400`) vs [firebase.json](firebase.json) database ID (`ai-studio-198437a8-...`) — different naming conventions, easy to confuse.
 
-## AI feedback loop (separate roadmap — only after Tier 2 #6 is fixed)
+## AI feedback loop (separate roadmap)
 
 These are the "use the data, not just collect it" follow-ups from the AI Performance review.
 
-- [ ] **Phase 2** — Wire Scanner.tsx to `saveLearningRecord` (Tier 5 above), thread `productId` through TrayCount (Tier 2 #6), migrate `imageBase64` → Cloud Storage URL.
+- [ ] **Phase 2** — Migrate `imageBase64` → Cloud Storage URL. (Scanner learning samples and `productId` threading are done; since v1.0.20 photos are shrunk to ≤800px and oversized ones are omitted so the Firestore 1 MiB limit is never hit.)
 - [ ] **Phase 3** — Admin "Learning Insights" viewer: last 20 records sorted by `|delta|` desc, with thumbnails. Read-only.
 - [ ] **Phase 4a** — Per-product confidence flag. Surface "this product historically undercounts by ~1.5 vials" as a warning banner in TrayCount. Does not auto-modify the AI's number. Cheap, deterministic.
 - [ ] **Phase 4b** — Few-shot prompt augmentation. Inject top-3 past corrections into Gemini prompts. Requires Phase 2 done + an A/B harness. Real "learning."

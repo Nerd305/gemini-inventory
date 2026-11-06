@@ -22,7 +22,7 @@ If no key is configured anywhere the API answers `503`.
 
 | Method | Path | What you get |
 | --- | --- | --- |
-| GET | `/api/v1/health` | Liveness, app version, database ID. No auth. |
+| GET | `/api/v1/health` | Liveness, app version, git `commit`, Cloud Run `revision`, `gemini` key status, database ID (`?deep=1` adds `firestore`). No auth. |
 | GET | `/api/v1/summary` | Totals: products, low-stock products, bins, vials on hand, active trays, expired / expiring trays, last completed count. |
 | GET | `/api/v1/products` | Every product with `currentStock`, `reorderPoint`, `lowStock`, number of bins and vials in bins, last count time. |
 | GET | `/api/v1/bins` | Every bin with product, fridge, shelf, trays, loose vials, `totalVials`, last counted at/by. |

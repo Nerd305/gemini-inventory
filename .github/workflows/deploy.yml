@@ -1,0 +1,163 @@
+name: Deploy
+
+# Deploys the web app to Cloud Run (service blu35inventory, us-west1) after the CI workflow succeeds on a push
+# to main, or by hand from the Actions tab ("Run workflow", branch main).
+#
+# The workflow does nothing until the repository VARIABLE DEPLOY_ENABLED is "true". Set it after running
+# scripts/gcp-setup-deploy.sh in Cloud Shell and adding the two secrets that script prints
+# (GCP_WORKLOAD_IDENTITY_PROVIDER and GCP_SERVICE_ACCOUNT). To pause automatic deploys, set it to "false".
+#
+# A new version first goes live on a tagged revision with NO traffic ("candidate"). It must answer the smoke
+# test (right version and commit, Gemini key accepted, database reachable, AI proxy refusing anonymous calls)
+# before any real traffic moves to it, so a bad build never reaches staff.
+#
+# Rollback: set DEPLOY_ENABLED to false, then send traffic back to the previous revision (Cloud Run console ->
+# blu35inventory -> Revisions -> the older one -> Manage traffic, or `gcloud run services update-traffic
+# blu35inventory --region us-west1 --to-revisions <old-revision>=100`). Fix problems forward on main.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-blu35inventory
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: gen-lang-client-0920383400
+  REGION: us-west1
+  SERVICE: blu35inventory
+  IMAGE: us-west1-docker.pkg.dev/gen-lang-client-0920383400/vialtrack/web
+
+jobs:
+  gate:
+    name: Should this commit be deployed?
+    if: >-
+      vars.DEPLOY_ENABLED == 'true' &&
+      ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+       (github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      proceed: ${{ steps.latest.outputs.proceed }}
+      sha: ${{ steps.latest.outputs.sha }}
+    steps:
+      - id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
+          LATEST="$(gh api "repos/${{ github.repository }}/git/ref/heads/main" --jq .object.sha)"
+          PROCEED=true
+          # Re-running an old CI run must not redeploy an old commit over a newer one.
+          if [ "${{ github.event_name }}" = "workflow_run" ] && [ "$SHA" != "$LATEST" ]; then
+            PROCEED=false
+            echo "::notice::main has moved on to ${LATEST:0:7}; this run was for ${SHA:0:7}, so it is not deployed."
+          fi
+          echo "proceed=$PROCEED" >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    name: Build · deploy candidate · smoke test · switch traffic
+    needs: gate
+    if: needs.gate.outputs.proceed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write # lets GitHub prove to Google who is deploying (no stored password or key)
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+
+      - name: Read version and commit
+        id: meta
+        run: |
+          SHA="$(git rev-parse HEAD)"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "short=${SHA:0:7}" >> "$GITHUB_OUTPUT"
+          echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Sign in to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+
+      - name: Build and push the image
+        run: |
+          gcloud auth configure-docker us-west1-docker.pkg.dev --quiet
+          docker build --build-arg GIT_SHA="${{ steps.meta.outputs.sha }}" \
+            -t "$IMAGE:${{ steps.meta.outputs.sha }}" -t "$IMAGE:latest" .
+          docker push "$IMAGE:${{ steps.meta.outputs.sha }}"
+          docker push "$IMAGE:latest"
+
+      - name: Deploy the new revision (no traffic yet, tagged "candidate")
+        run: |
+          # The service was created by Google AI Studio. Take it over cleanly: drop any helper container it
+          # added, reset a custom start command, and replace its plain-text GEMINI_API_KEY with the secret
+          # (a plain variable and a secret cannot share a name, so the secret is mounted as GEMINI_PROXY_KEY).
+          SIDECARS="$(gcloud run services describe "$SERVICE" --project "$PROJECT_ID" --region "$REGION" --format json \
+            | jq -r '[.spec.template.spec.containers[] | select(.ports == null) | .name] | join(",")')"
+          EXTRA=()
+          if [ -n "$SIDECARS" ]; then EXTRA+=(--remove-containers "$SIDECARS"); fi
+          gcloud run deploy "$SERVICE" --project "$PROJECT_ID" --region "$REGION" \
+            --image "$IMAGE:${{ steps.meta.outputs.sha }}" \
+            --set-secrets GEMINI_PROXY_KEY=gemini-api-key:latest \
+            --remove-env-vars GEMINI_API_KEY \
+            --update-env-vars GIT_SHA="${{ steps.meta.outputs.sha }}" \
+            --command="" --args="" \
+            "${EXTRA[@]}" \
+            --no-traffic --tag candidate --quiet
+
+      - name: Smoke test the candidate
+        run: |
+          CANDIDATE="$(gcloud run services describe "$SERVICE" --project "$PROJECT_ID" --region "$REGION" --format json \
+            | jq -r '.status.traffic[] | select(.tag == "candidate") | .url')"
+          echo "candidate: $CANDIDATE"
+          CHECK='.ok == true and .version == $v and .commit == $sha and .gemini == "ok" and .firestore == "ok"'
+          BODY=""
+          for i in $(seq 1 12); do
+            BODY="$(curl -fsS "$CANDIDATE/api/v1/health?deep=1" || true)"
+            if echo "$BODY" | jq -e --arg v "${{ steps.meta.outputs.version }}" --arg sha "${{ steps.meta.outputs.sha }}" "$CHECK" > /dev/null 2>&1; then break; fi
+            sleep 5
+          done
+          echo "$BODY"
+          echo "$BODY" | jq -e --arg v "${{ steps.meta.outputs.version }}" --arg sha "${{ steps.meta.outputs.sha }}" "$CHECK" > /dev/null \
+            || { echo "::error::The candidate did not report the expected version, commit, Gemini key and database."; exit 1; }
+          # AI Studio's old service worker must no longer be served; ours removes it from phones.
+          WORKER="$(curl -fsS "$CANDIDATE/_service-worker.js")"
+          echo "$WORKER" | grep -q 'unregister' || { echo "::error::/_service-worker.js is not the clean-up worker."; exit 1; }
+          if echo "$WORKER" | grep -q 'TARGET_URL_PREFIX'; then echo "::error::AI Studio's service worker is still being served."; exit 1; fi
+          # The AI proxy is mounted, has its key, and refuses callers who are not signed in (503 means no key).
+          CODE="$(curl -sS -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' \
+            "$CANDIDATE/api/ai/gemini/v1beta/models/gemini-2.5-flash:generateContent")"
+          [ "$CODE" = "401" ] || { echo "::error::Expected 401 from the AI proxy for an anonymous call, got $CODE."; exit 1; }
+
+      - name: Send all traffic to the new revision
+        run: |
+          gcloud run services update-traffic "$SERVICE" --project "$PROJECT_ID" --region "$REGION" --to-latest --quiet
+          gcloud run services update-traffic "$SERVICE" --project "$PROJECT_ID" --region "$REGION" --remove-tags candidate --quiet || true
+          URL="$(gcloud run services describe "$SERVICE" --project "$PROJECT_ID" --region "$REGION" --format 'value(status.url)')"
+          for i in $(seq 1 12); do
+            if curl -fsS "$URL/api/v1/health" | jq -e --arg sha "${{ steps.meta.outputs.sha }}" '.commit == $sha' > /dev/null 2>&1; then
+              {
+                echo "## Deployed v${{ steps.meta.outputs.version }} (${{ steps.meta.outputs.short }})"
+                echo ""
+                echo "$URL"
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::Traffic moved but the public URL does not report commit ${{ steps.meta.outputs.short }} yet. Check Cloud Run."
+          exit 1

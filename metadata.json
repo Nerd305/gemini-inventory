@@ -3,8 +3,5 @@
   "description": "Physical inventory for a compounding pharmacy fridge: QR-labelled shelves, bins and trays, AI vial counting, lot and beyond-use-date tracking.",
   "requestFramePermissions": [
     "camera"
-  ],
-  "capabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
   ]
 }

@@ -1,25 +1,77 @@
-import { GoogleGenAI } from '@google/genai';
+import { ApiError, GoogleGenAI } from '@google/genai';
+import { auth } from '../firebase';
 
 /**
- * The Gemini client is created lazily: constructing it at module load with a missing key
- * throws inside the browser and takes the whole app (including login) down with it.
- * Without a key, only the AI buttons fail — manual counting keeps working.
+ * Gemini is reached through a same-origin proxy; the browser never holds the API key.
+ *  - production: server.js `/api/ai/gemini` verifies the Firebase ID token, checks the user is on the
+ *    whitelist and adds the key from Secret Manager before forwarding to Google.
+ *  - `npm run dev`: the Vite dev-server proxy in vite.config.ts adds the key from .env.local.
+ * @google/genai builds URLs as `${baseUrl}/${apiVersion}/${path}` (apiVersion defaults to v1beta), so a
+ * call goes to `${origin}/api/ai/gemini/v1beta/models/gemini-2.5-flash:generateContent`.
  */
-let client: GoogleGenAI | null = null;
-function getClient(): GoogleGenAI {
-  if (!client) {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      throw new Error('GEMINI_API_KEY is not configured, so AI features are unavailable. Count manually or add the key in Settings/AI Studio secrets.');
-    }
-    client = new GoogleGenAI({ apiKey });
+export const GEMINI_PROXY_PATH = '/api/ai/gemini';
+
+/** Built per call (cheap): the Firebase ID token is cached by the SDK and refreshed before it expires. */
+async function getClient(): Promise<GoogleGenAI> {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Sign in to use AI features.');
+  const idToken = await user.getIdToken();
+  return new GoogleGenAI({
+    apiKey: 'proxied', // the browser SDK refuses a missing key; the proxy discards this placeholder
+    httpOptions: {
+      baseUrl: `${window.location.origin}${GEMINI_PROXY_PATH}`,
+      headers: { Authorization: `Bearer ${idToken}` },
+      timeout: 90_000,
+    },
+  });
+}
+
+/** A proxy refusal with its HTTP status, so callers (the camera HUD) can stop retrying when it is permanent. */
+export class AiRequestError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'AiRequestError';
+    this.status = status;
   }
-  return client;
+}
+
+/** Turn proxy and SDK failures into one-line messages the counting screens can show as they are. */
+function aiError(error: unknown): Error {
+  if (error instanceof ApiError) {
+    let detail = '';
+    try {
+      detail = String(JSON.parse(error.message)?.error?.message ?? '');
+    } catch {
+      /* the body was not JSON */
+    }
+    if (detail.trimStart().startsWith('<')) detail = ''; // an HTML error page is not worth showing
+    const fail = (message: string) => new AiRequestError(message, error.status);
+    switch (error.status) {
+      case 401: return fail(detail || 'Your sign-in has expired. Sign out, sign in again, then retry.');
+      case 403: return fail(detail || 'Your account is not allowed to use AI features.');
+      case 404: return fail(detail || 'AI is not available here. Locally, put GEMINI_API_KEY in .env.local and restart npm run dev.');
+      case 409: return fail(detail || 'VialTrack was updated. Close and reopen the app, then try again.');
+      case 429: return fail(detail || 'Too many AI requests. Wait a minute and try again.');
+      case 503: return fail(detail || 'AI is not configured on the server.');
+      default: return fail(`AI request failed (HTTP ${error.status}).${detail ? ' ' + detail : ''}`);
+    }
+  }
+  return error instanceof Error ? error : new Error('AI request failed.');
+}
+
+/** `models.generateContent` through the proxy, with readable errors. */
+async function generate(params: Parameters<GoogleGenAI['models']['generateContent']>[0]) {
+  try {
+    return await (await getClient()).models.generateContent(params);
+  } catch (error) {
+    throw aiError(error);
+  }
 }
 
 export async function analyzeProductImage(base64Image: string) {
   try {
-    const response = await getClient().models.generateContent({
+    const response = await generate({
       model: 'gemini-2.5-flash',
       contents: [
         {
@@ -67,7 +119,7 @@ export async function analyzeFrame(base64Image: string): Promise<FrameAnalysis> 
     throw new Error('Invalid image format.');
   }
 
-  const response = await getClient().models.generateContent({
+  const response = await generate({
     model: 'gemini-2.5-flash',
     contents: [
       {
@@ -181,7 +233,7 @@ export async function countVialsInTray(
       '{"vialCount": number, "confidence": "high"|"medium"|"low", "notes": string, ' +
       '"label": {"product": string|null, "strength": string|null, "lotNumber": string|null, "dateCompounded": string|null, "bud": string|null, "quantityMade": string|null} | null}.';
 
-    const response = await getClient().models.generateContent({
+    const response = await generate({
       model: 'gemini-2.5-flash',
       contents: [
         {
@@ -256,7 +308,7 @@ export async function readCompoundingLabel(base64Image: string): Promise<TrayLab
     'Return ONLY valid JSON of the shape ' +
     '{"product": string|null, "strength": string|null, "lotNumber": string|null, "dateCompounded": string|null, "bud": string|null, "quantityMade": string|null}. ' +
     'Use null for anything not visible.';
-  const response = await getClient().models.generateContent({
+  const response = await generate({
     model: 'gemini-2.5-flash',
     contents: [
       {

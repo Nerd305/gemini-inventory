@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { analyzeVideoFrame } from '../../lib/frameAnalyzer';
 import type { CapColorMap } from '../../lib/config';
-import type { VialDetection } from '../../lib/ai';
+import { AiRequestError, type VialDetection } from '../../lib/ai';
 
 interface CameraHUDProps {
   videoSelector?: string;
@@ -173,6 +173,8 @@ export default function CameraHUD({
           if (!cancelled) setLiveDetections(result.detections);
         } catch (err) {
           console.error('HUD frame analysis failed', err);
+          // Signed out, not allowed, AI not configured or the app was updated: asking again every 2 s only adds noise.
+          if (err instanceof AiRequestError && [401, 403, 409, 503].includes(err.status)) cancelled = true;
         }
       }
       if (!cancelled) {
