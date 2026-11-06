@@ -54,7 +54,7 @@ committed and must never be a way to run code in the checking session.
 - **Not started** — no probe passed.
 - **Waiting on…** — a `blockedBy` milestone is not done.
 - **Needs a person** — `kind: manual` and nobody has marked it done yet.
-- **Couldn't verify** — a probe errored (network off, file unreadable). Shown as a dashed pill.
+- **Couldn't verify** — a probe errored (network off, file unreadable, no GitHub access in an unattended session). Shown as a dashed pill. When the item was verified before, the last verified result is kept and labelled "couldn't re-check this time, last verified <date>" instead of flipping to a failure.
 
 Probe-backed milestones are read-only on the page. Manual (and `allowTick`) milestones have a
 "Mark done" button; the tick records the viewer's id, the time and a "where" chip

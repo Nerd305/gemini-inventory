@@ -102,7 +102,16 @@ for (const c of probe.chapters) {
   emit('chapters', c.id, { id: c.id, order: c.order, title: c.title, plain: c.plain, status: c.status, percent: c.percent, counts: c.counts, milestoneIds: c.milestoneIds });
   for (const m of c.milestones) {
     const { tick, ...rest } = m;
-    emit('milestones', m.id, rest);
+    const before = prevDoc('milestones', m.id);
+    if (m.uncertain && before && !before.uncertain) {
+      // Could not re-check this time (for example no GitHub API access in an unattended session):
+      // keep the last verified result, labelled, instead of showing a misleading failure.
+      emit('milestones', m.id, { ...rest, status: before.status, probes: before.probes, uncertain: true, carried: true, verifiedAt: before.verifiedAt || before.checkedAt || null });
+    } else if (m.uncertain && before && before.carried) {
+      emit('milestones', m.id, { ...rest, status: before.status, probes: before.probes, uncertain: true, carried: true, verifiedAt: before.verifiedAt || null });
+    } else {
+      emit('milestones', m.id, rest);
+    }
     if (prevStatus.size && prevStatus.get(m.id) !== m.status) changed.push(m.title);
   }
 }
@@ -130,6 +139,16 @@ let repoVersion = null;
 try { repoVersion = readJson('package.json').version; } catch {}
 const versionTile = probe.tiles?.version;
 const liveVersion = versionTile && typeof versionTile.detail === 'string' ? (versionTile.detail.match(/live=([0-9A-Za-z.-]+)/) || [])[1] || null : null;
+// Tiles that could not be re-verified keep their last verified value, labelled.
+const prevMeta = prevDoc('project', 'meta') || {};
+const tiles = { ...(probe.tiles || {}) };
+for (const [k, t] of Object.entries(tiles)) {
+  const before = (prevMeta.tiles || {})[k];
+  if (t.uncertain && before && (!before.uncertain || before.carried)) {
+    tiles[k] = { ...before, uncertain: true, carried: true, verifiedAt: before.verifiedAt || prevMeta.lastCheckedAt || null };
+  }
+}
+const ciOut = tiles.ci && tiles.ci.carried && prevMeta.ci ? prevMeta.ci : ci;
 emit('project', 'meta', {
   ...probe.project,
   dashboard: { ...(probe.dashboard || {}) },
@@ -143,8 +162,8 @@ emit('project', 'meta', {
   repoVersion,
   liveVersion,
   dirty: !!probe.repo.dirty,
-  tiles: probe.tiles,
-  ci,
+  tiles,
+  ci: ciOut,
   backlogOpen,
   summary: probe.summary.milestones,
 }, { always: true });

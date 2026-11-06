@@ -274,25 +274,28 @@
     if (state.runId && meta && meta.lastCheckRunId === state.runId) finishWatch('Updated just now.');
   }
 
+  function tileText(k, t) {
+    if (!t) return 'Not checked yet';
+    let base;
+    if (k === 'live') base = t.status === 'done' ? 'Healthy' : 'Not answering';
+    else if (k === 'version') base = t.status === 'done' ? 'Live matches the code' : 'Deploy pending';
+    else base = t.status === 'done' ? 'Passing' : t.value === 'failure' ? 'Failed' : t.value === 'none' ? 'No runs yet' : String(t.value || 'Unknown');
+    if (t.uncertain && !t.carried) return "Couldn't verify";
+    return base;
+  }
   function renderTiles() {
     const tiles = state.meta?.tiles || {};
     const defs = [['live', 'Live app'], ['version', 'Version'], ['ci', 'Build check']];
-    $('tiles').innerHTML = defs.map(([k, label]) => {
+    const root = $('tiles'); root.innerHTML = '';
+    for (const [k, label] of defs) {
       const t = tiles[k];
-      const cls = t ? t.status : 'todo';
-      let text = 'Not checked yet';
-      if (t) {
-        if (k === 'live') text = t.status === 'done' ? 'Healthy' : 'Not answering';
-        else if (k === 'version') text = t.status === 'done' ? 'Live matches the code' : 'Deploy pending';
-        else text = t.status === 'done' ? 'Passing' : t.value === 'failure' ? 'Failed' : t.value === 'none' ? 'No runs yet' : String(t.value || 'Unknown');
-      }
-      return `<div class="tile ${cls}"><p class="eyebrow">${label}</p><div class="big"></div><p class="muted" style="font-size:0.85rem"></p></div>`;
-    }).join('');
-    [...$('tiles').children].forEach((el, i) => {
-      const t = tiles[defs[i][0]];
-      el.querySelector('.big').textContent = !t ? 'Not checked yet' : defs[i][0] === 'live' ? (t.status === 'done' ? 'Healthy' : 'Not answering') : defs[i][0] === 'version' ? (t.status === 'done' ? 'Live matches the code' : 'Deploy pending') : (t.status === 'done' ? 'Passing' : t.value === 'failure' ? 'Failed' : t.value === 'none' ? 'No runs yet' : String(t.value || 'Unknown'));
-      el.querySelector('p.muted').textContent = t ? (t.detail || '') : '';
-    });
+      const el = document.createElement('div'); el.className = 'tile ' + (t ? (t.uncertain && !t.carried ? 'todo' : t.status) : 'todo');
+      el.innerHTML = '<p class="eyebrow"></p><div class="big"></div><p class="muted" style="font-size:0.85rem"></p>';
+      el.querySelector('.eyebrow').textContent = label;
+      el.querySelector('.big').textContent = tileText(k, t);
+      el.querySelector('p.muted').textContent = !t ? '' : t.carried ? `Couldn't re-check this time. Last verified ${fmtDate(t.verifiedAt) || 'earlier'}.` : t.uncertain ? String(t.detail || '').split('\n')[0].slice(0, 160) : (t.detail || '');
+      root.appendChild(el);
+    }
   }
 
   function chaptersSorted() { return [...state.chapters].sort((a, b) => (a.order || 0) - (b.order || 0)); }
@@ -362,7 +365,9 @@
     if (tick && s === 'done') detail.textContent = `Marked done by ${nameOf(tick.by)}${tick.where ? ' on ' + tick.where : ''}${tick.at ? ', ' + fmtDate(tick.at) : ''}.`;
     else if (s === 'blocked') detail.textContent = `Waiting on: ${(m.blockedByTitles || []).join(', ') || 'another item'}.`;
     else if (m.kind === 'manual') detail.textContent = m.verify ? `How to check: ${m.verify}` : '';
+    else if (m.carried && s === 'done') detail.textContent = `Couldn't re-check this time. Last verified ${fmtDate(m.verifiedAt) || 'earlier'}.`;
     else if (s === 'done') detail.textContent = (m.doneInVersion ? `Shipped in version ${m.doneInVersion}. ` : '') + (m.probes || []).map((p) => p.detail).filter(Boolean).slice(0, 2).join(' · ');
+    else if (m.uncertain) detail.textContent = `Couldn't verify this time: ${(m.probes || []).map((p) => p.error).filter(Boolean).join(' · ') || 'a check could not run'}.`;
     else {
       const failing = (m.probes || []).filter((p) => !p.ok);
       const why = failing.map((p) => p.error ? `Couldn't verify: ${p.error}` : p.detail).filter(Boolean).join(' · ');

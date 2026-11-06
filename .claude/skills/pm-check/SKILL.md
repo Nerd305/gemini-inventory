@@ -30,9 +30,13 @@ into that database. The page updates itself.
    `branch=$(git rev-parse --abbrev-ref HEAD)`; `dirty=$(git status --porcelain | wc -l)`;
    `git log -n <checks.commitCount> --format='%H|%ad|%s' --date=short`.
    If the checkout is on a different branch than `project.repo.branch` says, note it in the summary.
-2. **CI status.** Try `gh run list --workflow <checks.ciWorkflow> -b <checks.ciBranch> -L 5 --json conclusion,status,url,createdAt,headSha,displayTitle`.
-   If `gh` is not authenticated, use the GitHub MCP tool `actions_list` (or `list_workflow_runs`) for
-   the same workflow and branch. If neither works, record `ci: { conclusion: 'unknown' }`.
+2. **CI status.** `pm/probe.mjs` asks GitHub for the latest CI run itself (the `gh-run` probe, needs
+   `gh` access to this repository). Unattended sessions are usually not bound to the repository and
+   get HTTP 403; that is expected. Do not work around it (never attach push credentials for this):
+   the probe records "couldn't verify", and `pm/emit-docs.mjs` keeps the last verified result,
+   labelled "couldn't re-check this time, last verified <date>". An interactive session that has
+   `gh` access refreshes it. Optionally pass `--ci pm/.out/ci.json` to `emit-docs.mjs` with
+   `{ conclusion, status, url, createdAt, headSha }` when you obtained the run another way.
 3. **Bind the artifact.** Read `dashboard.artifactUrl` from `pm/plan.json`. Load the `ArtifactData`
    tool with ToolSearch (`select:ArtifactData`) and read its schema before calling it. Call the
    `Artifact` tool with `action: "read"` on the URL once so this session is bound to that artifact.

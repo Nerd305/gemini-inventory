@@ -219,11 +219,17 @@ const PROBES = {
   },
   'gh-run': (p) => {
     if (!network) throw new Error('skipped: network off');
-    const out = execFileSync(
-      'gh',
-      ['run', 'list', '--workflow', p.workflow, '-b', p.branch || 'main', '-L', '1', '--json', 'conclusion,status,url,headSha,createdAt'],
-      { cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: p.timeoutMs ?? 30000 },
-    );
+    let out;
+    try {
+      out = execFileSync(
+        'gh',
+        ['run', 'list', '--workflow', p.workflow, '-b', p.branch || 'main', '-L', '1', '--json', 'conclusion,status,url,headSha,createdAt'],
+        { cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: p.timeoutMs ?? 30000 },
+      );
+    } catch (e) {
+      const why = String((e && (e.stderr || e.message)) || 'gh failed').split('\n').map((l) => l.trim()).filter(Boolean).pop() || 'gh failed';
+      throw new Error(`GitHub Actions not reachable from this session (${why.slice(0, 120)})`);
+    }
     const runs = JSON.parse(out || '[]');
     if (!runs.length) return { ok: false, value: 'none', detail: `no runs of ${p.workflow} on ${p.branch || 'main'}` };
     const run = runs[0];
@@ -261,7 +267,7 @@ async function runProbe(p) {
     const r = await impl(p);
     return { ...base, ok: !!r.ok, value: r.value, detail: r.detail, url: r.url };
   } catch (e) {
-    return { ...base, ok: false, error: String(e && e.message ? e.message : e) };
+    return { ...base, ok: false, error: String(e && e.message ? e.message : e).split('\n')[0].slice(0, 220) };
   }
 }
 
