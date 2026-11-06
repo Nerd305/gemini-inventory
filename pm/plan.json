@@ -408,13 +408,13 @@
         {
           "id": "two-user-lock",
           "title": "Two phones cannot count the same bin",
-          "plain": "The second phone is warned that the bin is already being counted.",
+          "plain": "The second phone is warned that the bin is already being counted, and can carry on if the first is done.",
           "kind": "probe",
           "probes": [
             {
               "type": "grep",
               "path": "src/contexts/CountingSessionContext.tsx",
-              "pattern": "already being counted"
+              "pattern": "being counted by"
             }
           ]
         },
