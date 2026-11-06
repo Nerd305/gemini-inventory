@@ -1,0 +1,14 @@
+{
+  "name": "vialtrack-firestore-rules-tests",
+  "private": true,
+  "type": "module",
+  "description": "Emulator tests for ../../firestore.rules. Dev-only: not part of the app build or the Docker image.",
+  "scripts": {
+    "test": "firebase emulators:exec --only firestore --project demo-vialtrack --non-interactive \"node rules.test.mjs\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "5.0.2",
+    "firebase": "12.19.0",
+    "firebase-tools": "15.35.0"
+  }
+}

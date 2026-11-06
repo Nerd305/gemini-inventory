@@ -46,7 +46,7 @@ npm run package  # electron-builder → dist/packaged/*.dmg
 npm run lint     # tsc --noEmit for both main & renderer tsconfigs
 ```
 
-There is no test suite and no single-test command — `lint` is the primary automated check for both apps. [.github/workflows/ci.yml](.github/workflows/ci.yml) runs web lint + build + `node --check server.js` and desktop lint on pushes to `main` and on pull requests.
+There is no app test suite and no single-test command — `lint` is the primary automated check for both apps. The one exception is the Firestore rules: [tests/firestore-rules](tests/firestore-rules/README.md) runs `firestore.rules` against the local emulator (`cd tests/firestore-rules && npm ci && npm test`, needs Java 21+; it is not part of CI, the build or the image). Run it before publishing any rules change and add a case for what you changed. [.github/workflows/ci.yml](.github/workflows/ci.yml) runs web lint + build + `node --check server.js` and desktop lint on pushes to `main` and on pull requests.
 
 User-facing docs live in `docs/`: [QUICKSTART.md](docs/QUICKSTART.md) (staff/tester guide, includes a testing checklist and the tuning-knob map) and [API.md](docs/API.md).
 
@@ -57,7 +57,8 @@ User-facing docs live in `docs/`: [QUICKSTART.md](docs/QUICKSTART.md) (staff/tes
 - The Firebase project ID is `gen-lang-client-0920383400` (see [.firebaserc](.firebaserc)). The two names look unrelated; do not confuse the project ID with the database ID.
 - `firebase-blueprint.json` documents the Firestore entity schemas (User, Location, Shelf, Product, Basket, Tray, InventoryLog, CountingSession, LearningDataEntry, AppSettings, FridgeConfig). **Rules are authoritative** for on-disk shapes (`Basket` requires `name`, `trayCount`, `vialsPerTray`, `looseVials`, `qrCode`; `Tray` requires `slot`, `count`).
 - `appSettings.fridges` (FridgeConfig with `shelfCount`/`basketSlotsPerShelf`) is a legacy layout config that nothing in the count flow reads; the live source of shelf layout is `locations.shelfCount`.
-- `firestore.rules` enforces role-based access. **Two** bootstrap admin emails are hardcoded in both [firestore.rules](firestore.rules#L15) and [src/contexts/AuthContext.tsx](src/contexts/AuthContext.tsx#L34-L36): `duval.villegas@mdexam.com` and `duval.villegas@gmail.com`. First sign-in for either auto-creates a user doc with role `admin`; other emails must be present in `/whitelist/{email}` (lowercase) or sign-in is rejected.
+- `firestore.rules` enforces role-based access. **Two** bootstrap admin emails are hardcoded in both [firestore.rules](firestore.rules#L14) (`isBootstrapAdminEmail`, verified email required) and [src/contexts/AuthContext.tsx](src/contexts/AuthContext.tsx#L34-L36): `duval.villegas@mdexam.com` and `duval.villegas@gmail.com`. First sign-in for either auto-creates a user doc with role `admin`; other emails must be present in `/whitelist/{email}` (lowercase) or sign-in is rejected.
+- **A client can never pick its own role.** `users/{uid}` may be created by its owner only with their own sign-in email and only for the role they are entitled to (`isEntitledRole`: bootstrap email → `admin`, otherwise exactly the role on their `whitelist/{email}` entry, missing role = `staff`); admins can create any profile. Before 1.0.21 any Google account could create itself as `admin`. Changing `AuthContext`'s first-sign-in writes means changing this rule and its tests together. Rules changes only take effect when someone publishes them to the **named** database (README "Firestore rules").
 - `vite.config.ts` has a comment explicitly warning that file watching is controlled via `DISABLE_HMR` to prevent flickering during AI Studio agent edits — don't change that logic casually.
 
 ## Pages & navigation

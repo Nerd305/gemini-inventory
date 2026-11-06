@@ -9,16 +9,33 @@ service cloud.firestore {
       return request.auth != null;
     }
     
+    // The two hardcoded bootstrap admins (keep in sync with src/contexts/AuthContext.tsx).
+    function isBootstrapAdminEmail() {
+      return request.auth.token.email in ["duval.villegas@mdexam.com", "duval.villegas@gmail.com"] &&
+             request.auth.token.email_verified == true;
+    }
+
     function isAdmin() {
       return isAuthenticated() &&
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-         (request.auth.token.email in ["duval.villegas@mdexam.com", "duval.villegas@gmail.com"] && request.auth.token.email_verified == true));
+         isBootstrapAdminEmail());
     }
 
     function isStaffOrAdmin() {
       return isAuthenticated() &&
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'staff'] ||
-         (request.auth.token.email in ["duval.villegas@mdexam.com", "duval.villegas@gmail.com"] && request.auth.token.email_verified == true));
+         isBootstrapAdminEmail());
+    }
+
+    // The role a signed-in account may give ITSELF on its own first sign-in: bootstrap admins get
+    // 'admin'; everyone else gets exactly the role on their whitelist entry (no role there = 'staff',
+    // the same default AuthContext uses). Without this, any Google account could create its own
+    // users/{uid} document as 'admin' and thereby write everything.
+    function isEntitledRole(role) {
+      let wlEntry = /databases/$(database)/documents/whitelist/$(request.auth.token.email.lower());
+      return request.auth.token.email_verified == true &&
+        ((isBootstrapAdminEmail() && role == 'admin') ||
+         (exists(wlEntry) && get(wlEntry).data.get('role', 'staff') == role));
     }
 
     function hasRequiredFields(fields) {
@@ -164,7 +181,13 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isValidUser() && (request.auth.uid == userId || isAdmin());
+      // Self-create only as your own uid, with your own sign-in email, and only for the role you are
+      // entitled to (see isEntitledRole). Admins can still create profiles for others.
+      allow create: if isAuthenticated() && isValidUser() && (
+        (request.auth.uid == userId &&
+         request.resource.data.email == request.auth.token.email &&
+         isEntitledRole(request.resource.data.role)) ||
+        isAdmin());
       allow update: if isAuthenticated() && isValidUser() && (isAdmin() || (request.auth.uid == userId && request.resource.data.role == resource.data.role));
       allow delete: if isAdmin();
     }

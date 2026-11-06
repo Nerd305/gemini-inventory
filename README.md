@@ -77,6 +77,12 @@ firebase deploy --only firestore:rules --project gen-lang-client-0920383400
 Or paste the file into Firebase Console → Firestore → **switch the database dropdown to the named
 database** → Rules → Publish.
 
+Before publishing a change, run the rules tests (they use the local emulator, never the real database; needs Java 21+):
+
+```bash
+cd tests/firestore-rules && npm ci && npm test
+```
+
 ### 4. Deploy the web app (Cloud Run, from GitHub)
 
 Merging to `main` deploys the app: the **CI** workflow (type-check + build) runs, and when it passes the

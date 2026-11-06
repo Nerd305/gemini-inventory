@@ -1399,10 +1399,35 @@
             {
               "type": "grep",
               "path": "firestore.rules",
-              "pattern": "whitelist/\\$\\(request\\.auth\\.token\\.email"
+              "pattern": "function isEntitledRole"
+            },
+            {
+              "type": "grep",
+              "path": "firestore.rules",
+              "pattern": "isEntitledRole\\(request\\.resource\\.data\\.role\\)"
             }
           ],
-          "plainWhenFailing": "Scheduled as release 1.0.17 together with a rules deploy."
+          "plainWhenFailing": "Scheduled as release 1.0.21 together with a rules deploy."
+        },
+        {
+          "id": "rules-tested",
+          "title": "Security rules have automatic tests",
+          "plain": "A test run proves strangers are kept out and invited staff still get in, before any rules change goes live.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "file-exists",
+              "path": "tests/firestore-rules/rules.test.mjs"
+            },
+            {
+              "type": "grep-count",
+              "path": "tests/firestore-rules/rules.test.mjs",
+              "pattern": "^t\\('",
+              "flags": "m",
+              "op": ">=",
+              "value": 30
+            }
+          ]
         },
         {
           "id": "rules-hardened-live",
@@ -1413,6 +1438,48 @@
             "rules-hardened"
           ],
           "verify": "Firebase console → Firestore → named database → Rules shows the whitelist check on users create."
+        },
+        {
+          "id": "reads-staff-only",
+          "title": "Only staff can read the data",
+          "plain": "Someone who merely has a Google account cannot read the catalog, the staff list or the AI photos.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "md-checkbox",
+              "path": "TASKS.md",
+              "match": "Only staff can read",
+              "checked": true
+            }
+          ]
+        },
+        {
+          "id": "printjobs-staff-only",
+          "title": "Only staff can queue labels",
+          "plain": "A stranger cannot send print jobs to the pharmacy printers.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "md-checkbox",
+              "path": "TASKS.md",
+              "match": "Print jobs: staff only",
+              "checked": true
+            }
+          ]
+        },
+        {
+          "id": "whitelist-removal-revokes",
+          "title": "Removing someone ends their access",
+          "plain": "Taking a person off the invite list also stops them from changing inventory.",
+          "kind": "probe",
+          "probes": [
+            {
+              "type": "md-checkbox",
+              "path": "TASKS.md",
+              "match": "Removing someone from the whitelist",
+              "checked": true
+            }
+          ]
         },
         {
           "id": "read-only-key-security",

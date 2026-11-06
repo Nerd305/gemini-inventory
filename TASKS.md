@@ -8,6 +8,7 @@ Tier numbers match the audit framing: lower tier = higher severity.
 
 ## Recently shipped
 
+- **v1.0.21** — Strangers can no longer make themselves admin. `firestore.rules`: a `users/{uid}` profile can only be created by its owner, with their own sign-in email, for the role they are entitled to (bootstrap admin → `admin`; everyone else → the role on their whitelist entry). Before this, any Google account could create its own `admin` profile and then write everything. The bootstrap-email check is now one shared helper. New: [tests/firestore-rules](tests/firestore-rules/README.md), 36 emulator cases (the old rules fail 11 of them). **Needs a rules publish to the named database** (README "Firestore rules"); the app code is unchanged. After publishing, open Settings → Users and remove any profile or whitelist entry you do not recognise.
 - **v1.0.20** — Own the deploy + installable on phones. **Deploy:** the Gemini key is now server-side (`/api/ai/gemini` proxy in `server.js`: Firebase sign-in + whitelist check, 60 req/min/user, one model; the key is no longer defined into the web bundle); `.github/workflows/deploy.yml` builds, deploys a no-traffic Cloud Run revision, smoke-tests it and then switches traffic (inert until `DEPLOY_ENABLED=true`); `scripts/gcp-setup-deploy.sh` does the one-time Google setup from Cloud Shell; `/api/v1/health` reports `commit`, `revision`, `gemini` (and `firestore` with `?deep=1`); the app shows the commit after the version badge; the old AI Studio service worker is removed from phones. **Phones:** web app manifest + vial icons (`scripts/make-icons.mjs`); Print Station auto-print is a per-device opt-in (default off) so phones can no longer take labels from the iMac; sign-in never hangs and explains itself; camera releases/restarts and asks for 1080p; photos are shrunk before upload; a bin locked by a closed app can be overridden; 44px steppers, tap-to-open help, no double-tap zoom. Rules hardening for `users` creation is the next release (needs a rules deploy to the named database).
 - **v1.0.19** — Project-manager dashboard kit: `pm/` (plan.json chapters/milestones/probes, probe.mjs runner, emit-docs.mjs, dashboard.html artifact page, README), the `/pm-check` skill in `.claude/skills/`, `GEMINI.md`, and the "after shipping, run /pm-check" rule in CLAUDE.md. The dashboard lives at a private claude.ai artifact and refreshes itself from a scheduled task (writes only what changed, one document at a time; anything it cannot re-verify keeps its last verified result, labelled).
 
@@ -30,6 +31,12 @@ Tier numbers match the audit framing: lower tier = higher severity.
 - **v1.0.8** — Tier 1 #1 (`lastScanRef` ReferenceError on `/count`) — fixed inline; required for the counter to be testable.
 
 ---
+
+## Security follow-ups (found while testing the 1.0.21 rules; each one checked in the emulator)
+
+- [ ] **Only staff can read.** Every collection has `allow read: if isAuthenticated()`, so any Google account that signs in (the app signs strangers out afterwards, but the Firebase SDK does not have to) can still read the user list (emails, roles), the AI training photos in `learningData` and the whole catalog. Make reads `isStaffOrAdmin()`, except a person's own `users/{uid}` and own `whitelist/{email}` (AuthContext reads those before the role exists). Add the cases to `tests/firestore-rules` first.
+- [ ] **Print jobs: staff only.** `printJobs` create/update only require sign-in, so a stranger can queue labels onto the pharmacy printers. Confirm which account the Print Server signs in as (it needs a profile), then require `isStaffOrAdmin()`.
+- [ ] **Removing someone from the whitelist should end their access.** Settings → Users removal deletes only `whitelist/{email}`; their `users/{uid}` profile stays, so their Firestore writes keep working (the AI proxy does stop, because it re-checks the whitelist). Delete or demote the profile too.
 
 ## Tier 1 — Blocking (closed; `npm run lint` is green)
 
