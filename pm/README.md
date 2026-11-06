@@ -11,6 +11,7 @@ artifact's database; a Claude Code skill (`/pm-check`) fills it.
 | --- | --- |
 | `pm/plan.json` | The only file you edit per project: project facts, chapters, milestones, probes. No secrets. |
 | `pm/probe.mjs` | Deterministic probe runner (Node 22, no dependencies). Owns the status rules. |
+| `pm/emit-docs.mjs` | Turns a probe run into database documents and writes only what changed since the last check (diff against `pm/.out/prev`). |
 | `pm/dashboard.html` | The page template. Generic: everything it shows comes from the artifact database. |
 | `.claude/skills/pm-check/SKILL.md` | The `/pm-check` procedure Claude follows (locally or in a cloud session fired by the button). |
 | `pm/README.md` | This guide. |
@@ -96,7 +97,7 @@ Database collections: `project/meta` (one doc), `chapters/{id}`, `milestones/{id
    by the project name, and publish it with the Artifact tool using the capabilities above, a short
    `description`, `icon: "checklist"`, and **private sharing** (the URL is committed; the repo may be
    public). Paste the URL into `plan.json` → `dashboard.artifactUrl`.
-5. Run `/pm-check` once to seed the database. Open the page: chapters and tiles should appear.
+5. Run `/pm-check` once to seed the database (an interactive session may write the ~120 first-seed documents with `batch`; unattended runs write one document at a time and only what changed). Open the page: chapters and tiles should appear.
 6. Create the poke-only scheduled task (no cron, fresh session per fire) with the prompt template
    below; paste its id into `plan.json` → `dashboard.triggerId` and update `project/meta.dashboard`.
 7. Add the rule "after shipping, run /pm-check" to CLAUDE.md (and GEMINI.md if Gemini tools are used).

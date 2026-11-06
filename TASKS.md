@@ -8,7 +8,7 @@ Tier numbers match the audit framing: lower tier = higher severity.
 
 ## Recently shipped
 
-- **v1.0.16** — Project-manager dashboard kit: `pm/` (plan.json chapters/milestones/probes, probe.mjs runner, emit-docs.mjs, dashboard.html artifact page, README), the `/pm-check` skill in `.claude/skills/`, `GEMINI.md`, and the "after shipping, run /pm-check" rule in CLAUDE.md. The dashboard lives at a private claude.ai artifact and refreshes itself from a scheduled task.
+- **v1.0.18** — Project-manager dashboard kit: `pm/` (plan.json chapters/milestones/probes, probe.mjs runner, emit-docs.mjs, dashboard.html artifact page, README), the `/pm-check` skill in `.claude/skills/`, `GEMINI.md`, and the "after shipping, run /pm-check" rule in CLAUDE.md. The dashboard lives at a private claude.ai artifact and refreshes itself from a scheduled task.
 
 - **v1.0.15** — `isValidConfig` now accepts `serverTimestamp()` and partial merge writes (saving the API key / fridges from Settings was rejected by the rules; AI Studio's import agent found and deployed the same fix). Vite dev server declares `allowedHosts: true` for the AI Studio preview proxy; `.env.example` trimmed to build-time vars so AI Studio stops prompting for server-only ones. Merged the AI Studio workspace commit (rename to VialTrack AI, `metadata.json` capabilities): restored the two `package-lock.json` files it deleted, finished the rename on the login screen and header, and made the Dockerfile fall back to `npm install` when a lockfile is missing.
 

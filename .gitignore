@@ -19,3 +19,6 @@ serviceAccountKey.json
 # AI Studio workspace artifacts
 bun.lock
 bun.lockb
+
+# Project dashboard kit working files (pm/README.md)
+pm/.out/
