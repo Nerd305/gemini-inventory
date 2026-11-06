@@ -7,6 +7,7 @@ import { useCountingSession } from '../../contexts/CountingSessionContext';
 import { Button } from '../ui/button';
 import { countVialsInTray } from '../../lib/ai';
 import { saveLearningRecord } from '../../lib/learning';
+import { downscaleImage, LEARNING_PHOTO_MAX_EDGE } from '../../lib/image';
 import {
   budStatus,
   daysUntilBud,
@@ -107,16 +108,12 @@ export default function TrayCount({
     setAiError(null);
     setAiNote(null);
     try {
-      const dataUrl: string = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = () => reject(new Error('Could not read image'));
-        reader.readAsDataURL(file);
-      });
-      const result = await countVialsInTray(dataUrl, { capacity });
+      // Phone photos are several MB: shrink before upload, and keep a smaller copy as the training sample.
+      const aiImage = await downscaleImage(file);
+      const result = await countVialsInTray(aiImage, { capacity });
       setCount(result.vialCount);
       aiPredictionRef.current = result.vialCount;
-      lastImageRef.current = dataUrl;
+      lastImageRef.current = await downscaleImage(aiImage, { maxEdge: LEARNING_PHOTO_MAX_EDGE, quality: 0.7 });
       if (result.label) {
         const l = result.label;
         setLabel((prev) => ({
@@ -150,16 +147,18 @@ export default function TrayCount({
         label,
       });
 
-      // Save learning record in background
-      saveLearningRecord({
-        imageBase64: lastImageRef.current,
-        aiPrediction: aiPredictionRef.current || undefined,
-        userFinalCount: count,
-        productId,
-        trayId: tray.id,
-        basketId: tray.basketId,
-        userId: user.uid,
-      });
+      // Learning sample in the background, only when the AI actually made a prediction (a 0 counts too).
+      if (aiPredictionRef.current !== null) {
+        saveLearningRecord({
+          imageBase64: lastImageRef.current,
+          aiPrediction: aiPredictionRef.current,
+          userFinalCount: count,
+          productId,
+          trayId: tray.id,
+          basketId: tray.basketId,
+          userId: user.uid,
+        });
+      }
 
       onAccept(tray.id, count);
     } catch (error) {
@@ -215,7 +214,7 @@ export default function TrayCount({
             {previouslyCounted ? `Previously ${tray.count}` : 'Not counted yet'} · full tray = {capacity}
           </p>
         </div>
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onCancel} aria-label="Cancel">
+        <Button variant="ghost" size="icon" className="h-10 w-10" onClick={onCancel} aria-label="Cancel">
           <X className="h-5 w-5" />
         </Button>
       </div>

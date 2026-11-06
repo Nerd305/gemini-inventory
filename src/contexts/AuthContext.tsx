@@ -21,6 +21,23 @@ const AuthContext = createContext<AuthContextType>({
 
 export const useAuth = () => useContext(AuthContext);
 
+/** One readable sentence per sign-in failure; names the real host instead of assuming localhost. */
+function describeSignInError(error: any): string {
+  switch (error?.code) {
+    case 'auth/unauthorized-domain':
+      return `Google Sign-In is not allowed from ${window.location.host}.\n\nAdd this domain in Firebase Console → Authentication → Settings → Authorized domains.`;
+    case 'auth/admin-restricted-operation':
+      return 'Sign-in failed. Please enable Google as a sign-in method in the Firebase Console.';
+    case 'auth/popup-blocked':
+    case 'auth/operation-not-supported-in-this-environment':
+      return 'Your browser blocked the Google sign-in window. Allow pop-ups for this site, or open the app in Safari or Chrome and sign in there.';
+    case 'auth/network-request-failed':
+      return 'No connection. Check Wi-Fi or cellular and try again.';
+    default:
+      return 'Sign-in failed: ' + (error?.message || 'unknown error');
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<'admin' | 'staff' | null>(null);
@@ -29,6 +46,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
+      try {
       if (currentUser) {
         const email = currentUser.email || 'local@test.com';
         const isBootstrapAdmin = 
@@ -85,7 +103,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         setRole(null);
       }
-      setLoading(false);
+      } catch (error) {
+        // A failed read (offline fridge room, permission error) must not leave the app on a spinner forever.
+        console.error('Auth bootstrap failed:', error);
+        setRole(null);
+        alert('Could not load your account. Check your connection and reload the app.');
+      } finally {
+        setLoading(false);
+      }
     });
 
     return unsubscribe;
@@ -96,14 +121,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
     } catch (error: any) {
+      // Closing the Google window is not an error worth an alert.
+      if (error?.code === 'auth/popup-closed-by-user' || error?.code === 'auth/cancelled-popup-request') return;
       console.error('Sign-in error:', error);
-      if (error.code === 'auth/unauthorized-domain') {
-        alert('Google Sign-In failed because localhost is not authorized in Firebase.\\n\\nTo fix this: Go to Firebase Console -> Authentication -> Settings -> Authorized Domains, and add "localhost".');
-      } else if (error.code === 'auth/admin-restricted-operation') {
-        alert('Sign-In failed. Please enable Google Auth in your Firebase Console.');
-      } else {
-        alert('Sign-In failed: ' + error.message);
-      }
+      alert(describeSignInError(error));
     }
   };
 

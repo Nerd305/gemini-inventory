@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { APP_VERSION } from './lib/version';
@@ -41,10 +41,19 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 }
 
 function Login() {
-  const { user, signIn } = useAuth();
-  
+  const { user, loading, signIn } = useAuth();
+  const [busy, setBusy] = useState(false);
+
   if (user) {
     return <Navigate to="/" />;
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      </div>
+    );
   }
   
   return (
@@ -58,8 +67,20 @@ function Login() {
           <CardDescription>Sign in to manage medication inventory</CardDescription>
         </CardHeader>
         <CardContent className="flex justify-center">
-          <Button onClick={signIn} size="lg" className="w-full">
-            Sign in with Google
+          <Button
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await signIn();
+              } finally {
+                setBusy(false);
+              }
+            }}
+            disabled={busy}
+            size="lg"
+            className="w-full"
+          >
+            {busy ? (<><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Signing in…</>) : 'Sign in with Google'}
           </Button>
         </CardContent>
       </Card>

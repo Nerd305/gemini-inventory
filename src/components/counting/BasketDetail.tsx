@@ -64,26 +64,26 @@ function Stepper({
   disabled?: boolean;
 }) {
   return (
-    <div className="flex items-center gap-1 rounded-md border border-gray-200 bg-white px-1.5 py-0.5">
+    <div className="flex items-center gap-1 rounded-md border border-gray-200 bg-white px-1">
       <span className="text-[10px] font-bold uppercase text-gray-500 mr-1">{label}</span>
       <button
         type="button"
-        className="h-7 w-7 rounded text-gray-700 hover:bg-gray-100 disabled:opacity-40 flex items-center justify-center"
+        className="h-11 w-11 rounded text-gray-700 hover:bg-gray-100 active:bg-gray-200 disabled:opacity-40 flex items-center justify-center"
         onClick={() => onChange(Math.max(min, value - 1))}
         disabled={disabled || value <= min}
         aria-label={`Decrease ${label}`}
       >
-        <Minus className="h-3.5 w-3.5" />
+        <Minus className="h-4 w-4" />
       </button>
-      <span className="w-6 text-center text-sm font-bold tabular-nums">{value}</span>
+      <span className="w-7 text-center text-sm font-bold tabular-nums">{value}</span>
       <button
         type="button"
-        className="h-7 w-7 rounded text-gray-700 hover:bg-gray-100 disabled:opacity-40 flex items-center justify-center"
+        className="h-11 w-11 rounded text-gray-700 hover:bg-gray-100 active:bg-gray-200 disabled:opacity-40 flex items-center justify-center"
         onClick={() => onChange(Math.min(max, value + 1))}
         disabled={disabled || value >= max}
         aria-label={`Increase ${label}`}
       >
-        <Plus className="h-3.5 w-3.5" />
+        <Plus className="h-4 w-4" />
       </button>
     </div>
   );

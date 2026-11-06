@@ -24,13 +24,25 @@ export type LearningRecord = {
   notes?: string;
 };
 
+// A Firestore document is capped at 1 MiB; keep the stored photo well under that (base64 characters).
+const MAX_IMAGE_CHARS = 700_000;
+
+function stripUndefined<T extends Record<string, unknown>>(obj: T): T {
+  return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined)) as T;
+}
+
 export async function saveLearningRecord(record: Omit<LearningRecord, 'timestamp' | 'delta'>) {
   try {
-    const fullRecord: LearningRecord = {
-      ...record,
+    const { imageBase64, ...rest } = record;
+    const tooLarge = !!imageBase64 && imageBase64.length > MAX_IMAGE_CHARS;
+    // addDoc rejects undefined field values, so they are dropped rather than written.
+    const fullRecord = stripUndefined({
+      ...rest,
+      imageBase64: tooLarge ? undefined : imageBase64,
+      notes: tooLarge ? 'image omitted: too large for Firestore' : rest.notes,
       delta: record.userFinalCount - (record.aiPrediction || 0),
-      timestamp: new Date().toISOString()
-    };
+      timestamp: new Date().toISOString(),
+    }) as LearningRecord;
 
     await addDoc(collection(db, 'learningData'), fullRecord);
     return true;

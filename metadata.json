@@ -1,6 +1,6 @@
 {
   "name": "VialTrack AI",
-  "description": "AI-powered medication inventory management system with QR scanning, stock forecasting, and automated categorization.",
+  "description": "Physical inventory for a compounding pharmacy fridge: QR-labelled shelves, bins and trays, AI vial counting, lot and beyond-use-date tracking.",
   "requestFramePermissions": [
     "camera"
   ],

@@ -12,6 +12,7 @@ import { LabelPrinter } from '../components/LabelPrinter';
 import { HelpTooltip } from '../components/HelpTooltip';
 import { basketTotal, describeShelf, fifoOrder, formatBud, budStatus, traysForProductQuery, trayRecordFromSnapshot, useFirstTrayId, type TrayRecord } from '../lib/inventory';
 import { Star } from 'lucide-react';
+import { downscaleImage } from '../lib/image';
 import { formatDistanceToNow } from 'date-fns';
 
 interface Product {
@@ -196,25 +197,21 @@ export default function Products() {
 
     setAnalyzing(true);
     try {
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64Image = reader.result as string;
-        const result = await analyzeProductImage(base64Image);
-        if (result) {
-          setNewProduct(prev => ({
-            ...prev,
-            name: result.name || prev.name,
-            category: result.category || prev.category,
-            description: result.description || prev.description
-          }));
-        }
-        setAnalyzing(false);
-      };
-      reader.readAsDataURL(file);
+      const result = await analyzeProductImage(await downscaleImage(file));
+      if (result) {
+        setNewProduct(prev => ({
+          ...prev,
+          name: result.name || prev.name,
+          category: result.category || prev.category,
+          description: result.description || prev.description
+        }));
+      }
     } catch (error) {
       console.error(error);
-      alert("Failed to analyze image");
+      alert(error instanceof Error ? error.message : 'Failed to analyze image');
+    } finally {
       setAnalyzing(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 

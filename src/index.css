@@ -23,3 +23,12 @@ html, body {
 body {
   overflow-x: hidden;
 }
+
+/* Touch and stylus: no double-tap zoom on controls (rapid +1 taps used to zoom the page) and no grey
+   flash on tap. Pressed state is drawn by the components themselves (see Button, Stepper). */
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+button, a, [role="button"], input, select, textarea, label {
+  touch-action: manipulation;
+}

@@ -35,6 +35,22 @@ as a spreadsheet or over an API.
 - On a phone the bottom bar has **Home · Count · Bins · Items · More**. Locations, Reports and Print
   Station are under **More** (Settings) on phones and in the left sidebar on a computer.
 
+### Install on your phone (recommended for counting)
+
+Installing makes the app open full-screen with its own icon, like any other app. Use this address on
+every phone: **https://blu35inventory-156214809618.us-west1.run.app** (each address is a separate
+install with its own sign-in).
+
+- **iPhone (use Safari):** open the address → **Share** → **Add to Home Screen** → **Add**. Open it from
+  the Home Screen and **sign in again** (the installed app keeps its own sign-in). Allow the camera when
+  asked.
+- **Android (Chrome):** open the address → **⋮** → **Install app** (or **Add to Home screen**) →
+  **Install**. Allow the camera on the first scan.
+- If Google sign-in opens and never comes back inside the installed iPhone app, sign in from Safari
+  instead and tell an admin (see §12).
+- Phones never print labels themselves: on the Print Station page "Auto-print on this device" stays
+  **off** (the default). The iMac prints.
+
 ## 4. First-time setup (follow the dashboard checklist)
 
 The dashboard shows **Setup progress**; each step tells you where to go and ticks itself off.
@@ -100,8 +116,9 @@ Labels go into a queue; something has to print them:
 - **Print server on the iMac** (recommended): the VialTrack Print Server app in the menu bar. Install
   steps are in the [README](../README.md#5-label-printing-imac-print-server) and
   [desktop/README.md](../desktop/README.md).
-- **Fallback**: open **Print Station** in the web app on the computer wired to the printers and leave
-  the tab open.
+- **Fallback**: open **Print Station** in the web app on the computer wired to the printers, switch on
+  **Auto-print on this device**, and leave the tab open. Do not switch it on while the Print Server app
+  is also running on that computer (every label would print twice), and never on a phone.
 
 Check with **Print Station → Send Test Print**. Bin and tray labels default to the 2.5" × 1.5" Epson
 size; shelf labels too. You can pick another size in the print dialog.
@@ -138,6 +155,18 @@ Work through these and note anything surprising.
 - [ ] Reports → Excel workbook opens with all six sheets; API `/api/v1/summary` returns numbers.
 - [ ] Leave the count page mid-way: the session shows as paused on the dashboard and disappears
       after 24 h.
+- [ ] Installed on the iPhone (Safari → Share → Add to Home Screen) and on the Galaxy (Chrome →
+      Install app); both open full-screen with the blue vial icon.
+- [ ] Inside each installed app: Google sign-in completes, the camera prompt appears (note whether
+      once or on every launch), and a bin label scans from Count.
+- [ ] AI count from the installed app returns a number and the lot / BUD; the live scanner is running
+      again afterwards; Settings → AI stats shows one more sample.
+- [ ] Print Station on a phone says "Queue view only" and pending labels stay pending until the iMac
+      prints them.
+- [ ] Galaxy Z Fold: the cover screen shows the bottom bar; note whether the inner screen shows the
+      sidebar or the bottom bar; the S Pen hits −1 / +1 / the Loose stepper reliably.
+- [ ] Close the installed app in the middle of a bin on phone A, then scan the same bin on phone B: it
+      asks whether to count it anyway.
 
 ## 11. Tuning knobs (where to change things)
 
@@ -163,6 +192,9 @@ After any change: `npm run lint`, `npm run build`, `node scripts/bump-version.js
 | Trays won't save / "Missing or insufficient permissions" | Firestore rules not deployed for the `trays` collection, or the bin is from the old app: use **Repair** on the Bins page |
 | Bins page shows an amber "came from the old app" banner | Data written by the 2026 prototype. Repair it (keeps the old totals) or wipe it under Settings → Danger zone and set up fresh |
 | Scanning a bin says "Bin not found" | Label printed from a different database or the bin was deleted; reprint from Bins |
-| Nothing prints | Print server not running and no Print Station tab open; check `lpstat -p` names in `printers.json` |
+| Nothing prints | Print server not running, or no Print Station tab with **Auto-print on this device** switched on; check `lpstat -p` names in `printers.json` |
 | Version badge is old after a deploy | AI Studio deployed its workspace copy, not GitHub `main`; pull first |
 | API answers 503 | No API key set under Settings → API Bridge |
+| Sign-in never returns inside the installed iPhone app | Known limit until sign-in is served from the app's own address; sign in from Safari and tell an admin |
+| Chrome offers only "Add to Home screen", not "Install app" | The manifest did not load: open `/manifest.webmanifest` in the tab; it must show JSON, not the app page |
+| AI count says "Your sign-in has expired" | Sign out and in again; if it persists the account may have been removed from the whitelist |

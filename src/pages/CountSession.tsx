@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Html5Qrcode } from 'html5-qrcode';
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Boxes, Keyboard, MapPin, StopCircle } from 'lucide-react';
 import { Button } from '../components/ui/button';
@@ -39,43 +39,92 @@ function CameraView() {
   useEffect(() => {
     let scanner: Html5Qrcode | null = null;
     let cancelled = false;
+    let starting = false;
+    let restartTimer: number | undefined;
+    // Start/stop run one after another so a restart can never overlap a start that is still opening the camera.
+    let chain: Promise<void> = Promise.resolve();
+
+    const onDecoded = (decoded: string) => handleScanRef.current(decoded);
+    const baseConfig = { fps: 10, qrbox: { width: 260, height: 260 } };
+
+    const stop = async () => {
+      const s = scanner;
+      scanner = null;
+      if (s && s.isScanning) {
+        try {
+          await s.stop();
+          s.clear();
+        } catch (err) {
+          console.error('Camera stop failed', err);
+        }
+      }
+    };
+
+    const cameraTrack = () => {
+      const video = document.querySelector<HTMLVideoElement>(`#${READER_ID} video`);
+      return (video?.srcObject as MediaStream | null)?.getVideoTracks?.()[0] ?? null;
+    };
+
+    const scheduleRestartCheck = () => {
+      window.clearTimeout(restartTimer);
+      restartTimer = window.setTimeout(() => {
+        if (cancelled || starting || document.visibilityState !== 'visible') return;
+        const track = cameraTrack();
+        // After the phone's camera app, a lock screen or a background spell the stream can be ended.
+        if (!track || track.readyState === 'ended') chain = chain.then(stop).then(() => (cancelled ? undefined : start()));
+      }, 600);
+    };
 
     const start = async () => {
+      starting = true;
       try {
-        scanner = new Html5Qrcode(READER_ID);
-        const config = { fps: 10, qrbox: { width: 260, height: 260 } };
+        setError(null);
+        // QR only: faster to decode, and the native BarcodeDetector is used where the browser has it (Android Chrome).
+        scanner = new Html5Qrcode(READER_ID, {
+          verbose: false,
+          formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+          useBarCodeDetectorIfSupported: true,
+        });
         try {
+          // Ask for a 1080p rear camera: facingMode alone often gives 640x480, which is too soft for 1.5" labels.
+          // (html5-qrcode: when videoConstraints is present it replaces the first argument.)
           await scanner.start(
             { facingMode: 'environment' },
-            config,
-            (decoded) => handleScanRef.current(decoded),
+            { ...baseConfig, videoConstraints: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } } },
+            onDecoded,
             () => {},
           );
         } catch {
           if (cancelled) return;
-          await scanner.start(
-            { facingMode: 'user' },
-            config,
-            (decoded) => handleScanRef.current(decoded),
-            () => {},
-          );
+          await scanner.start({ facingMode: 'user' }, baseConfig, onDecoded, () => {});
         }
+        // The user may have left the page while the camera was still opening: release it right away.
+        if (cancelled) {
+          await stop();
+          return;
+        }
+        cameraTrack()?.addEventListener('ended', scheduleRestartCheck);
       } catch (err) {
         console.error('Camera start failed', err);
         if (!cancelled) setError('Unable to access camera. Grant permission and reload, or use the keyboard button to type a code.');
+      } finally {
+        starting = false;
       }
     };
 
-    start();
+    chain = chain.then(start);
+
+    document.addEventListener('visibilitychange', scheduleRestartCheck);
+    window.addEventListener('focus', scheduleRestartCheck);
+    window.addEventListener('pageshow', scheduleRestartCheck);
 
     return () => {
       cancelled = true;
-      if (scanner && scanner.isScanning) {
-        scanner
-          .stop()
-          .then(() => scanner?.clear())
-          .catch((err) => console.error('Camera stop failed', err));
-      }
+      window.clearTimeout(restartTimer);
+      document.removeEventListener('visibilitychange', scheduleRestartCheck);
+      window.removeEventListener('focus', scheduleRestartCheck);
+      window.removeEventListener('pageshow', scheduleRestartCheck);
+      chain = chain.then(stop);
     };
   }, []);
 

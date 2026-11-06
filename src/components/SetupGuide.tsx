@@ -117,7 +117,7 @@ export default function SetupGuide({ bins, productCount, ready, onHide }: SetupG
         id: 'printing',
         title: 'Set up label printing',
         detail:
-          'Labels print through the Print Station. Either install the VialTrack Print Server on the iMac connected to the label printers (desktop/ folder in the repo; see README), or keep the Print Station page open in a browser on that computer. Then hit "Send Test Print" on the Print Station page and check a label comes out.',
+          'Labels print through the Print Station. Either install the VialTrack Print Server on the iMac connected to the label printers (desktop/ folder in the repo; see README), or open the Print Station page in a browser on that computer and switch on “Auto-print on this device”. Then hit "Send Test Print" on the Print Station page and check a label comes out.',
         to: '/print-station',
         cta: 'Open Print Station',
         done: Boolean(manual.printing) || signals.printed,

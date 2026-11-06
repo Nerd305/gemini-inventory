@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { collection, addDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
@@ -8,8 +8,31 @@ import { LabelContent } from '../shared/LabelContent';
 import { usePrintJobQueue } from '../shared/printJobSubscription';
 import type { PrintJob } from '../shared/types';
 
+// Auto-printing marks every pending label as printed, so it is a deliberate, per-device switch that
+// defaults to OFF: phones and second computers only look at the queue (the iMac print server or the
+// one computer wired to the printers does the printing).
+const AUTO_PRINT_KEY = 'vialtrack.printStation.autoPrint';
+
+function readAutoPrint(): boolean {
+  try {
+    return localStorage.getItem(AUTO_PRINT_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
 export default function PrintStation() {
-  const { jobs, activeJob, isPrinting, completeActive, failActive, reprint } = usePrintJobQueue();
+  const [autoPrint, setAutoPrint] = useState<boolean>(readAutoPrint);
+  const { jobs, activeJob, isPrinting, completeActive, failActive, reprint } = usePrintJobQueue({ autoProcess: autoPrint });
+
+  const toggleAutoPrint = (next: boolean) => {
+    setAutoPrint(next);
+    try {
+      localStorage.setItem(AUTO_PRINT_KEY, String(next));
+    } catch {
+      /* private mode: the switch still works until the page is closed */
+    }
+  };
 
   const handleSendTestPrint = async () => {
     try {
@@ -36,6 +59,10 @@ export default function PrintStation() {
 
   useEffect(() => {
     if (!activeJob) return;
+    if (!autoPrint) {
+      failActive();
+      return;
+    }
 
     const printContent = document.getElementById('print-station-area');
     if (!printContent) {
@@ -92,18 +119,23 @@ export default function PrintStation() {
         }, 1000);
       }, 500);
     };
-  }, [activeJob, completeActive, failActive]);
+  }, [activeJob, autoPrint, completeActive, failActive]);
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Print Station</h1>
-          <p className="text-gray-500">Leave this page open on your iMac to automatically print labels sent from mobile devices.</p>
+          <p className="text-gray-500">
+            Labels sent from phones queue here. The VialTrack Print Server app on the iMac prints them; this page prints them too
+            only when auto-print is switched on below.
+          </p>
         </div>
         <div className="flex flex-col items-end space-y-2">
           <div className="flex items-center space-x-2 bg-blue-50 text-blue-700 px-4 py-2 rounded-full border border-blue-200">
-            {isPrinting ? (
+            {!autoPrint ? (
+              <><Clock className="h-4 w-4" /> <span>Queue view only</span></>
+            ) : isPrinting ? (
               <><Loader2 className="h-4 w-4 animate-spin" /> <span>Printing...</span></>
             ) : (
               <><Printer className="h-4 w-4 animate-pulse" /> <span>Listening for jobs</span></>
@@ -114,6 +146,28 @@ export default function PrintStation() {
           </Button>
         </div>
       </div>
+
+      <Card>
+        <CardContent className="pt-6">
+          <label htmlFor="auto-print" className="flex items-start gap-3 cursor-pointer">
+            <input
+              id="auto-print"
+              type="checkbox"
+              className="mt-1 h-5 w-5 accent-blue-600"
+              checked={autoPrint}
+              onChange={(e) => toggleAutoPrint(e.target.checked)}
+            />
+            <span>
+              <span className="block font-medium text-gray-900">Auto-print on this device {autoPrint ? '(on)' : '(off)'}</span>
+              <span className="block text-sm text-gray-600">
+                Switch this on only on the one computer wired to the label printers, and only if it is not running the VialTrack Print
+                Server app (both would print every label twice). It prints every pending label here and marks it done, so phones and
+                other computers must leave it off.
+              </span>
+            </span>
+          </label>
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card>
@@ -158,7 +212,7 @@ export default function PrintStation() {
             <CardTitle>Instructions</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4 text-sm text-gray-600">
-            <p><strong>1. Keep this tab open:</strong> This page needs to remain open in your browser to receive and process print jobs.</p>
+            <p><strong>1. Switch on auto-print (printer computer only) and keep this tab open:</strong> the page then receives and processes print jobs. On a phone, leave it off.</p>
             <p><strong>2. Browser Pop-ups:</strong> Ensure your browser allows pop-ups and automatic printing for this site.</p>
             <p><strong>3. Printer Selection:</strong> When the first print dialog appears, make sure to select your specialized label printer and set the correct paper size. Subsequent prints should remember these settings.</p>
             <p><strong>4. Mobile Printing:</strong> On your mobile device, use the "Send to Print Station" button instead of "Print Label".</p>

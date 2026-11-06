@@ -9,6 +9,7 @@ an API or as a spreadsheet.
 
 | I want to… | Read |
 | --- | --- |
+| Install the app on a phone | [docs/QUICKSTART.md](docs/QUICKSTART.md) §3 — Safari *Add to Home Screen*, Chrome *Install app* |
 | Use the app (setup, counting, FIFO, printing, exports) | **[docs/QUICKSTART.md](docs/QUICKSTART.md)** — also pops up on first launch and behind the **?** button in the app |
 | Pull counts / stock into another system | [docs/API.md](docs/API.md) — also the **API** page in the app (any signed-in user) |
 | Install the label print server on the iMac | [desktop/README.md](desktop/README.md) and the section below |
@@ -23,6 +24,7 @@ Live app: https://blu35inventory-156214809618.us-west1.run.app (Cloud Run servic
 server.js         Express: hosts the build, sale webhook, read-only reporting API (/api/v1)
 desktop/          Electron macOS print server: Firestore printJobs → CUPS printers (Zebra / Epson / Canon)
 src/shared/       Types + hooks shared by the web app and the print server
+public/           App manifest + icons for phone install (regenerate with node scripts/make-icons.mjs)
 firestore.rules   Security rules (role-based) — deploy these whenever they change
 docs/             Quick start for staff and testers, API reference
 ```
@@ -110,7 +112,9 @@ Labels are queued in Firestore (`printJobs`). Two things can print them:
    `~/Library/Logs/VialTrack Print Server/print-server.log`. Full details in [desktop/README.md](desktop/README.md).
 
 2. **Print Station page** (fallback) — open **Print Station** in the web app on the computer wired to the
-   printers and leave the tab open; each job opens the browser print dialog.
+   printers, switch on **Auto-print on this device** and leave the tab open; each job opens the browser
+   print dialog. The switch is per device and off by default so phones never take labels away from the
+   iMac; do not turn it on where the Print Server app is also running.
 
 Verify with **Print Station → Send Test Print**. The in-app setup checklist on the dashboard has a
 "Set up label printing" step for exactly this.

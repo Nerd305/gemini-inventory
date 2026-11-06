@@ -118,6 +118,19 @@ export function CountingSessionProvider({ children }: { children: React.ReactNod
     return creatingRef.current;
   }, []);
 
+  // Best effort when the page is really going away (not just parked in the back/forward cache):
+  // let go of the bin so other phones are not told it is still being counted.
+  useEffect(() => {
+    const release = (e: PageTransitionEvent) => {
+      if (e.persisted) return;
+      const id = sessionIdRef.current;
+      if (!id || statusRef.current === 'completed') return;
+      updateDoc(doc(db, 'countingSessions', id), { activeBasketId: null }).catch(() => {});
+    };
+    window.addEventListener('pagehide', release);
+    return () => window.removeEventListener('pagehide', release);
+  }, []);
+
   // On leaving /count without completing: pause (if work was done) or abandon (if nothing was counted).
   useEffect(() => {
     return () => {
@@ -174,8 +187,12 @@ export function CountingSessionProvider({ children }: { children: React.ReactNod
         const activeDocs = await getDocs(q);
         const otherActive = activeDocs.docs.find((d) => d.id !== sid);
         if (otherActive) {
-          window.alert(`Warning: this bin is already being counted by ${otherActive.data().userName}.`);
-          return;
+          // A phone whose app was closed mid-bin never releases its lock, so this must be overridable.
+          const proceed = window.confirm(
+            `This bin is marked as being counted by ${otherActive.data().userName}. ` +
+              'If they are done, or their app was closed, count it anyway?',
+          );
+          if (!proceed) return;
         }
       } catch (e) {
         console.error('Soft lock check failed', e);

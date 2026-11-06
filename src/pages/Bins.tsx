@@ -59,6 +59,7 @@ import {
 } from '../lib/inventory';
 import { LABEL_FORMAT_OPTIONS, sendPrintJobs } from '../lib/printing';
 import { basketNeedsRepair, repairLegacyData } from '../lib/repair';
+import { downscaleImage } from '../lib/image';
 import type { LabelFormat } from '../shared/types';
 
 interface BinRecord extends BasketDoc {
@@ -457,12 +458,7 @@ export default function Bins() {
     setReadingLabel(true);
     setTrayError(null);
     try {
-      const dataUrl: string = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = () => reject(new Error('Could not read image'));
-        reader.readAsDataURL(file);
-      });
+      const dataUrl = await downscaleImage(file);
       const l = await readCompoundingLabel(dataUrl);
       if (!l) {
         setTrayError('No label text found in that photo. Try a closer shot of the white label.');
