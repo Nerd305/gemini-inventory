@@ -4,13 +4,15 @@ import { collection, getCountFromServer } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useCountingSession } from '../../contexts/CountingSessionContext';
 import { useLocations } from '../../hooks/useLocations';
-import { describeShelf } from '../../lib/inventory';
-import { Layers, Package, Boxes, ScanLine, AlertCircle } from 'lucide-react';
+import { describeShelf, isReusableLabelId, parseShelfId } from '../../lib/inventory';
+import { QuickCreateFridge } from '../QuickCreate';
+import { Layers, Package, Boxes, ScanLine, AlertCircle, Plus } from 'lucide-react';
 
 export default function ScanStateMachine() {
   const { lastScan, activeShelfId, activeBasketId } = useCountingSession();
-  const { nameOf } = useLocations();
+  const { nameOf, byId, loading: locationsLoading } = useLocations();
   const [binCount, setBinCount] = useState<number | null>(null);
+  const [addingFridge, setAddingFridge] = useState(false);
 
   // Nudge first-time users toward setup instead of leaving them with a camera and nothing to scan.
   useEffect(() => {
@@ -51,6 +53,47 @@ export default function ScanStateMachine() {
   }
 
   if (lastScan.prefix === 'SHELF') {
+    const shelf = parseShelfId(activeShelfId);
+    const fridgeMissing = Boolean(shelf && !locationsLoading && !byId[shelf.locationId]);
+    if (shelf && fridgeMissing) {
+      return (
+        <div className="flex h-full flex-col justify-center px-4 py-2 overflow-y-auto">
+          <div className="flex items-center text-amber-700 mb-1">
+            <AlertCircle className="h-5 w-5 mr-2" />
+            <span className="text-xs font-bold uppercase tracking-wide">Shelf {shelf.shelfIndex} · fridge not set up</span>
+          </div>
+          {addingFridge ? (
+            <QuickCreateFridge
+              title="Set up this fridge"
+              fixedId={shelf.locationId}
+              defaultShelfCount={Math.max(5, shelf.shelfIndex)}
+              onCancel={() => setAddingFridge(false)}
+              onCreated={() => setAddingFridge(false)}
+            />
+          ) : (
+            <>
+              <p className="text-sm text-gray-600">
+                This shelf label belongs to a fridge that isn't in Locations (it may have been deleted). Set it up here and its
+                printed shelf labels keep working.
+              </p>
+              {isReusableLabelId(shelf.locationId) ? (
+                <button
+                  type="button"
+                  onClick={() => setAddingFridge(true)}
+                  className="mt-3 inline-flex items-center justify-center rounded-md bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700"
+                >
+                  <Plus className="h-4 w-4 mr-1" /> Set up this fridge
+                </button>
+              ) : (
+                <Link to="/locations" className="mt-3 text-sm underline text-teal-700">
+                  Add the fridge under Locations
+                </Link>
+              )}
+            </>
+          )}
+        </div>
+      );
+    }
     return (
       <div className="flex h-full flex-col justify-center px-6">
         <div className="flex items-center text-teal-700 mb-2">

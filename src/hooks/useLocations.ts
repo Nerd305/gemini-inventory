@@ -17,7 +17,12 @@ export function useLocations() {
       query(collection(db, 'locations')),
       (snap) => {
         const next: LocationRecord[] = [];
-        snap.forEach((d) => next.push({ id: d.id, ...(d.data() as LocationDoc) }));
+        snap.forEach((d) => {
+          const data = d.data() as Partial<LocationDoc>;
+          // A location without a name (old prototype data) used to throw in the sort below and
+          // leave every fridge dropdown empty; show it under a placeholder instead.
+          next.push({ id: d.id, ...(data as LocationDoc), name: typeof data.name === 'string' && data.name.trim() ? data.name : '(unnamed fridge)' });
+        });
         next.sort((a, b) => a.name.localeCompare(b.name));
         setLocations(next);
         setLoading(false);

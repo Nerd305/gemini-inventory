@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { collection, getDocs, deleteDoc, doc, setDoc } from 'firebase/firestore';
+import { Link } from 'react-router-dom';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/ui/button';
@@ -26,9 +27,10 @@ import {
   FridgeConfig,
   ApiBridgeConfig,
   loadAppSettings,
-  makeFridgeConfig,
   saveAppSettings,
 } from '../lib/config';
+import { createLocation } from '../lib/inventory';
+import { useLocations } from '../hooks/useLocations';
 import { APP_VERSION } from '../lib/version';
 import { AiStats, loadAiStats } from '../lib/learning';
 import { HelpTooltip } from '../components/HelpTooltip';
@@ -52,11 +54,14 @@ export default function Settings() {
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'admin' | 'staff'>('staff');
 
+  // Fridges typed into the old Settings editor (appSettings.fridges). Nothing reads that list:
+  // bins, shelf labels and /count all use the locations collection, so the card below offers to
+  // copy any that are missing there.
   const [fridges, setFridges] = useState<FridgeConfig[]>([]);
-  const [originalFridges, setOriginalFridges] = useState<FridgeConfig[]>([]);
   const [loadingFridges, setLoadingFridges] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const { locations, loading: loadingLocations } = useLocations();
+  const [copyingFridges, setCopyingFridges] = useState(false);
+  const [copyFridgesStatus, setCopyFridgesStatus] = useState<string | null>(null);
 
   const [hudEnabled, setHudEnabled] = useState(false);
   const [capColorMap, setCapColorMap] = useState<CapColorMap>({});
@@ -84,7 +89,6 @@ export default function Settings() {
       .then((settings) => {
         if (cancelled) return;
         setFridges(settings.fridges);
-        setOriginalFridges(settings.fridges);
         setHudEnabled(settings.hudEnabled);
         setCapColorMap(settings.capColorMap);
         setOriginalHud({ hudEnabled: settings.hudEnabled, capColorMap: settings.capColorMap });
@@ -200,39 +204,26 @@ export default function Settings() {
     }
   };
 
-  const isDirty = JSON.stringify(fridges) !== JSON.stringify(originalFridges);
+  const normName = (n: string | undefined) => (n ?? '').trim().toLowerCase();
+  const fridgesNotInLocations = fridges.filter(
+    (f) => normName(f.name) && !locations.some((l) => normName(l.name) === normName(f.name)),
+  );
 
-  const handleAddFridge = () => {
-    setFridges((prev) => [
-      ...prev,
-      makeFridgeConfig({ name: `Fridge ${prev.length + 1}` }),
-    ]);
-    setSaveStatus('idle');
-  };
-
-  const handleRemoveFridge = (id: string) => {
-    setFridges((prev) => prev.filter((f) => f.id !== id));
-    setSaveStatus('idle');
-  };
-
-  const handleUpdateFridge = (id: string, patch: Partial<FridgeConfig>) => {
-    setFridges((prev) =>
-      prev.map((f) => (f.id === id ? { ...f, ...patch } : f)),
-    );
-    setSaveStatus('idle');
-  };
-
-  const handleSaveFridges = async () => {
-    setSaveStatus('saving');
-    setSaveError(null);
+  const handleCopyFridges = async () => {
+    setCopyingFridges(true);
+    setCopyFridgesStatus(null);
+    let copied = 0;
     try {
-      await saveAppSettings({ fridges }, user?.uid);
-      setOriginalFridges(fridges);
-      setSaveStatus('saved');
-    } catch (error: any) {
-      setSaveStatus('error');
-      setSaveError(error?.message ?? 'Unknown error');
-      handleFirestoreError(error, OperationType.WRITE, 'config/appSettings');
+      for (const f of fridgesNotInLocations) {
+        await createLocation({ name: f.name, type: 'fridge', shelfCount: f.shelfCount });
+        copied += 1;
+      }
+      setCopyFridgesStatus(`Added ${copied} fridge${copied === 1 ? '' : 's'} to Locations. They now show up when you add a bin.`);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'locations');
+      setCopyFridgesStatus(`Added ${copied}, then failed: ${error instanceof Error ? error.message : 'unknown error'}`);
+    } finally {
+      setCopyingFridges(false);
     }
   };
 
@@ -510,133 +501,36 @@ export default function Settings() {
           <CardHeader>
             <CardTitle className="flex items-center">
               <Refrigerator className="h-5 w-5 mr-2 text-blue-600" />
-              Fridge Configuration
-              <HelpTooltip content="Define the physical layout of your storage. This structure directly dictates how the Guided Counting sessions step through shelves and baskets." />
+              Fridges
             </CardTitle>
             <CardDescription>
-              Legacy layout config. Shelf QR labels are printed from <a href="/locations" className="underline">Locations</a>{' '}
-              (set a shelf count on each fridge) and bins are managed under <a href="/bins" className="underline">Bins</a>.
+              Fridges and cabinets are set up under Locations, with how many shelves each has. Those are the fridges you can
+              pick when adding a bin, print shelf labels for, and scan in a count.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            {loadingFridges ? (
-              <div className="flex items-center text-sm text-gray-500">
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Loading fridges...
-              </div>
-            ) : fridges.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500">
-                No fridges configured yet. Click "Add Fridge" to create the first one.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {fridges.map((fridge) => (
-                  <div
-                    key={fridge.id}
-                    className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm"
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <div className="sm:col-span-3">
-                          <Label htmlFor={`fridge-name-${fridge.id}`} className="text-xs text-gray-500">
-                            Name
-                          </Label>
-                          <Input
-                            id={`fridge-name-${fridge.id}`}
-                            value={fridge.name}
-                            onChange={(e) =>
-                              handleUpdateFridge(fridge.id, { name: e.target.value })
-                            }
-                            placeholder="e.g. Main Refrigerator"
-                          />
-                        </div>
-                        <div>
-                          <Label
-                            htmlFor={`fridge-shelves-${fridge.id}`}
-                            className="text-xs text-gray-500"
-                          >
-                            Shelves
-                          </Label>
-                          <Input
-                            id={`fridge-shelves-${fridge.id}`}
-                            type="number"
-                            inputMode="numeric"
-                            min={1}
-                            value={fridge.shelfCount}
-                            onChange={(e) =>
-                              handleUpdateFridge(fridge.id, {
-                                shelfCount: Math.max(0, Number(e.target.value) || 0),
-                              })
-                            }
-                          />
-                        </div>
-                        <div>
-                          <Label
-                            htmlFor={`fridge-slots-${fridge.id}`}
-                            className="text-xs text-gray-500"
-                          >
-                            Basket slots / shelf
-                          </Label>
-                          <Input
-                            id={`fridge-slots-${fridge.id}`}
-                            type="number"
-                            inputMode="numeric"
-                            min={1}
-                            value={fridge.basketSlotsPerShelf}
-                            onChange={(e) =>
-                              handleUpdateFridge(fridge.id, {
-                                basketSlotsPerShelf: Math.max(0, Number(e.target.value) || 0),
-                              })
-                            }
-                          />
-                        </div>
-                        <div className="sm:col-span-1">
-                          <Label className="text-xs text-gray-500">ID</Label>
-                          <div className="text-xs font-mono text-gray-400 truncate pt-2">
-                            {fridge.id}
-                          </div>
-                        </div>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleRemoveFridge(fridge.id)}
-                        title="Remove fridge"
-                        className="text-red-500 hover:text-red-600 hover:bg-red-50"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-2">
-              <Button variant="outline" onClick={handleAddFridge}>
-                <Plus className="h-4 w-4 mr-2" />
-                Add Fridge
-              </Button>
-              <div className="flex items-center gap-3">
-                {saveStatus === 'saved' && !isDirty && (
-                  <span className="text-sm text-green-600">Saved</span>
-                )}
-                {saveStatus === 'error' && (
-                  <span className="text-sm text-red-600">{saveError ?? 'Save failed'}</span>
-                )}
-                <Button
-                  onClick={handleSaveFridges}
-                  disabled={!isDirty || saveStatus === 'saving'}
-                >
-                  {saveStatus === 'saving' ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Save className="h-4 w-4 mr-2" />
-                  )}
-                  {saveStatus === 'saving' ? 'Saving...' : 'Save Changes'}
+          <CardContent className="space-y-3">
+            <Button asChild variant="outline">
+              <Link to="/locations">
+                <Refrigerator className="h-4 w-4 mr-2" />
+                Manage fridges in Locations ({loadingLocations ? '…' : locations.length})
+              </Link>
+            </Button>
+            {loadingFridges || loadingLocations ? null : fridgesNotInLocations.length > 0 ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 space-y-2">
+                <p>
+                  <strong>
+                    {fridgesNotInLocations.length} fridge{fridgesNotInLocations.length === 1 ? ' was' : 's were'} added on this page
+                  </strong>{' '}
+                  in an older version, so {fridgesNotInLocations.length === 1 ? 'it does' : 'they do'} not show up when you add a bin:{' '}
+                  {fridgesNotInLocations.map((f) => `${f.name} (${f.shelfCount} shelves)`).join(', ')}.
+                </p>
+                <Button size="sm" onClick={handleCopyFridges} disabled={copyingFridges}>
+                  {copyingFridges ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />}
+                  Add {fridgesNotInLocations.length === 1 ? 'it' : 'them'} to Locations
                 </Button>
               </div>
-            </div>
+            ) : null}
+            {copyFridgesStatus && <p className="text-sm text-gray-700">{copyFridgesStatus}</p>}
           </CardContent>
         </Card>
       )}

@@ -20,6 +20,8 @@ import {
   getDocs,
   increment,
   query,
+  runTransaction,
+  setDoc,
   updateDoc,
   where,
   writeBatch,
@@ -422,6 +424,139 @@ export async function updateBasket(basketId: string, patch: Partial<BasketDoc>):
     ...compact(patch as Record<string, unknown>),
     updatedAt: new Date().toISOString(),
   });
+}
+
+// ---------------------------------------------------------------------------
+// Creating fridges, products and bins (one write path for every page that
+// offers "add", including the inline "+ New …" options and /count)
+// ---------------------------------------------------------------------------
+
+/** Firestore document IDs that are safe to reuse from a scanned label (auto-IDs are 20 alphanumerics). */
+const LABEL_DOC_ID = /^[A-Za-z0-9_]{1,128}$/;
+
+export function isReusableLabelId(id: string | null | undefined): id is string {
+  return Boolean(id && LABEL_DOC_ID.test(id));
+}
+
+export interface NewLocationInput {
+  name: string;
+  type?: 'fridge' | 'cabinet' | 'shelf';
+  shelfCount?: number;
+  description?: string;
+  /**
+   * Reuse a known document ID, e.g. the fridge part of a scanned SHELF:{locationId}-{n}
+   * label, so labels that are already printed keep working. Fails if it already exists.
+   */
+  id?: string;
+}
+
+/** Create a fridge / cabinet (locations/{id}). Returns its ID. */
+export async function createLocation(input: NewLocationInput): Promise<string> {
+  const name = input.name.trim();
+  if (!name) throw new Error('Give the fridge a name.');
+  const data = {
+    name,
+    type: input.type ?? 'fridge',
+    description: input.description ?? '',
+    shelfCount: clampInt(input.shelfCount ?? 0),
+    qrCode: `LOC:${Date.now()}`,
+    createdAt: new Date().toISOString(),
+  };
+  if (input.id) {
+    if (!isReusableLabelId(input.id)) throw new Error('That label has an unexpected ID; add the fridge under Locations instead.');
+    const ref = doc(db, 'locations', input.id);
+    await runTransaction(db, async (tx) => {
+      if ((await tx.get(ref)).exists()) throw new Error('A fridge with this ID already exists.');
+      tx.set(ref, data);
+    });
+    return input.id;
+  }
+  const ref = await addDoc(collection(db, 'locations'), data);
+  return ref.id;
+}
+
+export interface NewProductInput {
+  name: string;
+  category?: string;
+  reorderPoint?: number;
+  description?: string;
+}
+
+/** Create a catalog product with zero stock. Returns its ID. */
+export async function createProduct(input: NewProductInput): Promise<string> {
+  const name = input.name.trim();
+  if (!name) throw new Error('Give the product a name.');
+  const ref = await addDoc(collection(db, 'products'), {
+    name,
+    category: (input.category ?? '').trim(),
+    reorderPoint: clampInt(input.reorderPoint ?? 0),
+    description: input.description ?? '',
+    currentStock: 0,
+    qrCode: `PRODUCT:${Date.now()}`,
+    createdAt: new Date().toISOString(),
+  });
+  return ref.id;
+}
+
+export interface NewBinInput {
+  productId: string;
+  locationId: string;
+  name: string;
+  /** 1-based shelf from the top; null/undefined = unassigned. */
+  shelfIndex?: number | null;
+  trayCount: number;
+  vialsPerTray: number;
+  looseVials: number;
+  userId: string;
+  /**
+   * Reuse a known document ID, e.g. from a scanned BSKT:{id} label whose bin is missing,
+   * so the label already in the tag sleeve keeps working. Fails if it already exists.
+   */
+  id?: string;
+}
+
+/** Create a bin plus its blank trays. Returns the bin ID and shelf ID. */
+export async function createBin(input: NewBinInput): Promise<{ id: string; shelfId?: string }> {
+  if (!input.productId) throw new Error('Pick a product.');
+  if (!input.locationId) throw new Error('Pick a fridge.');
+  if (input.id && !isReusableLabelId(input.id)) throw new Error('That label has an unexpected ID; create the bin under Bins instead.');
+  const ref = input.id ? doc(db, 'baskets', input.id) : doc(collection(db, 'baskets'));
+  const shelfId = input.shelfIndex ? makeShelfId(input.locationId, input.shelfIndex) : undefined;
+  const capacity = clampInt(input.vialsPerTray, 1) || DEFAULT_VIALS_PER_TRAY;
+  const trayCount = clampInt(input.trayCount, 0, MAX_TRAYS_PER_BIN);
+  const now = new Date().toISOString();
+  const data = {
+    productId: input.productId,
+    locationId: input.locationId,
+    name: input.name.trim(),
+    trayCount,
+    vialsPerTray: capacity,
+    looseVials: clampInt(input.looseVials),
+    qrCode: basketQrCode(ref.id),
+    ...(shelfId ? { shelfId } : {}),
+    createdAt: now,
+    updatedAt: now,
+    migratedTraysAt: now, // new bins never had legacy slot docs
+  };
+  if (input.id) {
+    await runTransaction(db, async (tx) => {
+      if ((await tx.get(ref)).exists()) throw new Error('A bin with this label already exists.');
+      tx.set(ref, data);
+    });
+  } else {
+    await setDoc(ref, data);
+  }
+  if (trayCount > 0) {
+    await createTrays({
+      basketId: ref.id,
+      productId: input.productId,
+      capacity,
+      userId: input.userId,
+      existing: [],
+      items: Array.from({ length: trayCount }, () => ({})),
+    });
+  }
+  return { id: ref.id, shelfId };
 }
 
 /** Keep baskets.trayCount equal to the number of active trays. */

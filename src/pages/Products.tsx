@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { collection, query, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, deleteDoc, where } from 'firebase/firestore';
+import { collection, query, onSnapshot, serverTimestamp, doc, updateDoc, deleteDoc, where } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -10,7 +10,7 @@ import { Plus, Loader2, Camera, Sparkles, Printer, Pencil, Trash2, Package, Filt
 import { analyzeProductImage } from '../lib/ai';
 import { LabelPrinter } from '../components/LabelPrinter';
 import { HelpTooltip } from '../components/HelpTooltip';
-import { basketTotal, describeShelf, fifoOrder, formatBud, budStatus, traysForProductQuery, trayRecordFromSnapshot, useFirstTrayId, type TrayRecord } from '../lib/inventory';
+import { basketTotal, createProduct, describeShelf, fifoOrder, formatBud, budStatus, traysForProductQuery, trayRecordFromSnapshot, useFirstTrayId, type TrayRecord } from '../lib/inventory';
 import { Star } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -142,13 +142,7 @@ export default function Products() {
     e.preventDefault();
     setAdding(true);
     try {
-      const qrCode = `PRODUCT:${Date.now()}`;
-      await addDoc(collection(db, 'products'), {
-        ...newProduct,
-        currentStock: 0,
-        qrCode,
-        createdAt: new Date().toISOString(),
-      });
+      await createProduct(newProduct);
       setIsAddOpen(false);
       setNewProduct({ name: '', category: '', reorderPoint: 0, description: '' });
     } catch (error) {

@@ -27,6 +27,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { LabelPrinter } from '../components/LabelPrinter';
 import { HelpTooltip } from '../components/HelpTooltip';
 import { NextStepHint } from '../components/NextStepHint';
+import { NEW_OPTION_VALUE, QuickCreateFridge, QuickCreateProduct } from '../components/QuickCreate';
 import { readCompoundingLabel } from '../lib/ai';
 import {
   activeTrays,
@@ -34,6 +35,7 @@ import {
   basketTotal,
   budStatus,
   clampInt,
+  createBin,
   createTrays,
   daysUntilBud,
   DEFAULT_VIALS_PER_TRAY,
@@ -143,6 +145,8 @@ export default function Bins() {
   const [form, setForm] = useState<BinForm>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [creatingProduct, setCreatingProduct] = useState(false);
+  const [creatingFridge, setCreatingFridge] = useState(false);
 
   const [printData, setPrintData] = useState<{ code: string; title: string; subtitle?: string } | null>(null);
   const [detailBin, setDetailBin] = useState<BinRecord | null>(null);
@@ -290,6 +294,8 @@ export default function Bins() {
     setEditing(null);
     setForm({ ...EMPTY_FORM, locationId: locations[0]?.id ?? '' });
     setFormError(null);
+    setCreatingProduct(false);
+    setCreatingFridge(locations.length === 0);
     setDialogOpen(true);
   };
 
@@ -305,6 +311,8 @@ export default function Bins() {
       looseVials: clampInt(bin.looseVials),
     });
     setFormError(null);
+    setCreatingProduct(false);
+    setCreatingFridge(false);
     setDialogOpen(true);
   };
 
@@ -339,34 +347,18 @@ export default function Bins() {
           await setDoc(doc(db, 'baskets', editing.id), { shelfId: '' }, { merge: true });
         }
       } else {
-        const ref = doc(collection(db, 'baskets'));
-        const now = new Date().toISOString();
-        const trayCount = clampInt(form.trayCount, 0, MAX_TRAYS_PER_BIN);
-        await setDoc(ref, {
+        const created = await createBin({
           productId: form.productId,
           locationId: form.locationId,
           name,
-          trayCount,
+          shelfIndex: form.shelfIndex === '' ? null : Number(form.shelfIndex),
+          trayCount: form.trayCount,
           vialsPerTray: capacity,
-          looseVials: clampInt(form.looseVials),
-          qrCode: basketQrCode(ref.id),
-          ...(shelfId ? { shelfId } : {}),
-          createdAt: now,
-          updatedAt: now,
-          migratedTraysAt: now, // new bins never had legacy slot docs
+          looseVials: form.looseVials,
+          userId: user.uid,
         });
-        if (trayCount > 0) {
-          await createTrays({
-            basketId: ref.id,
-            productId: form.productId,
-            capacity,
-            userId: user.uid,
-            existing: [],
-            items: Array.from({ length: trayCount }, () => ({})),
-          });
-        }
         setPrintData({
-          code: basketQrCode(ref.id),
+          code: basketQrCode(created.id),
           title: name,
           subtitle: describeShelf(shelfId, nameOf) || nameOf(form.locationId) || '',
         });
@@ -736,6 +728,11 @@ export default function Bins() {
                 value={form.productId}
                 onChange={(e) => {
                   const productId = e.target.value;
+                  if (productId === NEW_OPTION_VALUE) {
+                    setCreatingProduct(true);
+                    return;
+                  }
+                  setCreatingProduct(false);
                   setForm((f) => ({
                     ...f,
                     productId,
@@ -750,10 +747,24 @@ export default function Bins() {
                     {p.name}
                   </option>
                 ))}
+                <option value={NEW_OPTION_VALUE}>+ New product…</option>
               </select>
-              {products.length === 0 && (
-                <p className="text-xs text-amber-600">No products yet — add the product under Products first.</p>
-              )}
+              {creatingProduct ? (
+                <QuickCreateProduct
+                  categories={Array.from(new Set(products.map((p) => p.category).filter((c): c is string => Boolean(c)))).sort()}
+                  onCancel={() => setCreatingProduct(false)}
+                  onCreated={(productId, newName) => {
+                    setCreatingProduct(false);
+                    setForm((f) => ({
+                      ...f,
+                      productId,
+                      name: f.name.trim() && f.name !== productName(f.productId) ? f.name : newName,
+                    }));
+                  }}
+                />
+              ) : products.length === 0 ? (
+                <p className="text-xs text-amber-600">No products yet. Pick "+ New product…" to add one here.</p>
+              ) : null}
             </div>
             <div className="space-y-2">
               <Label htmlFor="bin-name">
@@ -774,7 +785,15 @@ export default function Bins() {
                   id="bin-location"
                   className={selectClass}
                   value={form.locationId}
-                  onChange={(e) => setForm((f) => ({ ...f, locationId: e.target.value, shelfIndex: '' }))}
+                  onChange={(e) => {
+                    const locationId = e.target.value;
+                    if (locationId === NEW_OPTION_VALUE) {
+                      setCreatingFridge(true);
+                      return;
+                    }
+                    setCreatingFridge(false);
+                    setForm((f) => ({ ...f, locationId, shelfIndex: '' }));
+                  }}
                   required
                 >
                   <option value="">-- Choose --</option>
@@ -783,6 +802,7 @@ export default function Bins() {
                       {l.name}
                     </option>
                   ))}
+                  <option value={NEW_OPTION_VALUE}>+ New fridge…</option>
                 </select>
               </div>
               <div className="space-y-2">
@@ -814,6 +834,17 @@ export default function Bins() {
                 )}
               </div>
             </div>
+            {creatingFridge ? (
+              <QuickCreateFridge
+                onCancel={() => setCreatingFridge(false)}
+                onCreated={(locationId) => {
+                  setCreatingFridge(false);
+                  setForm((f) => ({ ...f, locationId, shelfIndex: '' }));
+                }}
+              />
+            ) : locations.length === 0 ? (
+              <p className="text-xs text-amber-600 -mt-2">No fridges yet. Pick "+ New fridge…" to add one here.</p>
+            ) : null}
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-2">
                 <Label htmlFor="bin-trays">Trays</Label>

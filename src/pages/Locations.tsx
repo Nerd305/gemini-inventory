@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { collection, query, onSnapshot, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { collection, query, onSnapshot, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -18,7 +18,7 @@ import { Plus, Loader2, Printer, Pencil, Trash2, MapPin, Layers, Send } from 'lu
 import { LabelPrinter } from '../components/LabelPrinter';
 import { HelpTooltip } from '../components/HelpTooltip';
 import { NextStepHint } from '../components/NextStepHint';
-import { clampInt, shelfQrCode, type LocationDoc } from '../lib/inventory';
+import { clampInt, createLocation, shelfQrCode, type LocationDoc, type NewLocationInput } from '../lib/inventory';
 import { LABEL_FORMAT_OPTIONS, sendPrintJobs } from '../lib/printing';
 import type { LabelFormat } from '../shared/types';
 
@@ -65,7 +65,7 @@ export default function Locations() {
           snapshot.forEach((d) => {
             locs.push({ id: d.id, ...(d.data() as LocationDoc) });
           });
-          locs.sort((a, b) => a.name.localeCompare(b.name));
+          locs.sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''));
           setLocations(locs);
           setLoading(false);
         },
@@ -94,14 +94,11 @@ export default function Locations() {
     e.preventDefault();
     setAdding(true);
     try {
-      const qrCode = `LOC:${Date.now()}`;
-      await addDoc(collection(db, 'locations'), {
-        name: newLocation.name.trim(),
-        type: newLocation.type,
+      await createLocation({
+        name: newLocation.name,
+        type: newLocation.type as NewLocationInput['type'],
         description: newLocation.description,
-        shelfCount: clampInt(newLocation.shelfCount),
-        qrCode,
-        createdAt: new Date().toISOString(),
+        shelfCount: newLocation.shelfCount,
       });
       setIsAddOpen(false);
       setNewLocation(EMPTY_FORM);

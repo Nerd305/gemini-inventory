@@ -7,6 +7,7 @@ import ScanStateMachine from './ScanStateMachine';
 import BasketDetail, { type BasketSummary } from './BasketDetail';
 import TrayCount from './TrayCount';
 import PutBackConfirm from './PutBackConfirm';
+import CreateBinForScan from './CreateBinForScan';
 import {
   activeTrays,
   allTraysCountedInSession,
@@ -33,7 +34,7 @@ const panelClass =
 
 export default function BottomPanel() {
   const { user } = useAuth();
-  const { activeBasketId, pendingTray, clearPendingTray, sessionId } = useCountingSession();
+  const { activeBasketId, activeShelfId, pendingTray, clearPendingTray, sessionId } = useCountingSession();
 
   const [basket, setBasket] = useState<BasketSummary | null>(null);
   const [basketMissing, setBasketMissing] = useState(false);
@@ -254,16 +255,19 @@ export default function BottomPanel() {
   }
 
   if (activeBasketId && !basket) {
+    if (basketMissing) {
+      return (
+        <div className={`${panelClass} overflow-y-auto px-4 py-2`}>
+          <p className="text-[10px] font-bold uppercase tracking-wide text-amber-700">New label</p>
+          <p className="text-base font-semibold text-gray-900">This bin isn't set up yet</p>
+          <p className="text-xs text-gray-500 mb-2">Fill in what's in the basket and keep counting. No need to leave the count.</p>
+          <CreateBinForScan basketId={activeBasketId} shelfId={activeShelfId} />
+        </div>
+      );
+    }
     return (
       <div className={`${panelClass} flex flex-col items-center justify-center text-sm text-gray-500 px-6 text-center`}>
-        {basketMissing ? (
-          <>
-            <p className="font-medium text-gray-800">Bin not found</p>
-            <p className="text-xs mt-1 break-all">No bin with ID {activeBasketId}. Create it under Bins and reprint the label.</p>
-          </>
-        ) : (
-          <>Loading bin…</>
-        )}
+        Loading bin…
       </div>
     );
   }
