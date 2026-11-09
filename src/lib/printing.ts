@@ -13,7 +13,7 @@ export const LABEL_FORMAT_OPTIONS: { value: LabelFormat; label: string }[] = [
   { value: '2.5x1.5', label: 'Epson 2.5" × 1.5" — bin sleeve / tray tag' },
   { value: '4x3', label: 'Zebra 4" × 3" — large QR' },
   { value: '1.5x1.5', label: 'Epson 1.5" × 1.5" — square QR' },
-  { value: '2.5x0.7', label: 'Epson 2.5" × 0.7" — slim barcode' },
+  { value: '2.5x0.7', label: 'Epson 2.5" × 0.7" — slim (small QR; barcode for short codes)' },
   { value: 'canon-integrated', label: 'Canon integrated form (Letter sheet)' },
 ];
 

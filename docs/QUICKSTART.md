@@ -123,16 +123,20 @@ send. You can switch between *Phone* and *Gemini* listening under the chat bubbl
 
 ## 8. Printing
 
-Labels go into a queue; something has to print them:
+Three ways to print, all producing the same label layout (the preview in the print dialog is exact):
 
-- **Print server on the iMac** (recommended): the VialTrack Print Server app in the menu bar. Install
-  steps are in the [README](../README.md#5-label-printing-imac-print-server) and
-  [desktop/README.md](../desktop/README.md).
-- **Fallback**: open **Print Station** in the web app on the computer wired to the printers and leave
-  the tab open.
+- **Print here (AirPrint)**: in any print dialog (bin label, tray labels, shelf labels). Opens the
+  label(s) as a PDF at the real label size; print it from that tab (⌘P, or Share → Print on an
+  iPhone/iPad) to any AirPrint or Mac printer. Check the paper size shows the label size and scale is
+  100%.
+- **Send to print server**: queues the label for the **VialTrack Print Server** app on the iMac,
+  which prints it on the printer set for that label size. Set-up checklist for that Mac:
+  [desktop/README.md](../desktop/README.md#setting-up-the-mac-that-has-the-printers).
+- **Print Station** page (fallback) in the web app on the computer wired to the printers.
 
 Check with **Print Station → Send Test Print**. Bin and tray labels default to the 2.5" × 1.5" Epson
-size; shelf labels too. You can pick another size in the print dialog.
+size; shelf labels too. You can pick another size in the print dialog. A job that keeps failing shows
+as **Failed** with the reason and a **Retry** button.
 
 ## 9. Pages and what they do
 

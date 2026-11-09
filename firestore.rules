@@ -131,8 +131,14 @@ service cloud.firestore {
              request.resource.data.code is string &&
              request.resource.data.title is string &&
              request.resource.data.format in ['4x3', '1.5x1.5', '2.5x0.7', '2.5x1.5', 'canon-integrated'] &&
-             request.resource.data.status in ['pending', 'completed'] &&
-             request.resource.data.createdAt is string;
+             // printing = claimed by one print station; failed = gave up after retries (src/shared/printJobSubscription.ts)
+             request.resource.data.status in ['pending', 'printing', 'completed', 'failed'] &&
+             request.resource.data.createdAt is string &&
+             (!request.resource.data.keys().hasAny(['attempts']) || (request.resource.data.attempts is int && request.resource.data.attempts >= 0)) &&
+             (!request.resource.data.keys().hasAny(['lastError']) || (request.resource.data.lastError is string && request.resource.data.lastError.size() <= 500)) &&
+             (!request.resource.data.keys().hasAny(['claimedBy']) || request.resource.data.claimedBy is string) &&
+             (!request.resource.data.keys().hasAny(['claimedAt']) || request.resource.data.claimedAt is string) &&
+             (!request.resource.data.keys().hasAny(['nextAttemptAt']) || request.resource.data.nextAttemptAt is string);
     }
 
     function isValidConfig() {

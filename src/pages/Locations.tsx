@@ -20,6 +20,7 @@ import { HelpTooltip } from '../components/HelpTooltip';
 import { NextStepHint } from '../components/NextStepHint';
 import { clampInt, createLocation, shelfQrCode, type LocationDoc, type NewLocationInput } from '../lib/inventory';
 import { LABEL_FORMAT_OPTIONS, sendPrintJobs } from '../lib/printing';
+import { openLabelsPdf, preparePrintWindow } from '../lib/localPrint';
 import type { LabelFormat } from '../shared/types';
 
 interface Location extends LocationDoc {
@@ -430,6 +431,26 @@ export default function Locations() {
                 <Button className="bg-indigo-600 hover:bg-indigo-700" onClick={sendAllShelfLabels} disabled={sendingShelves}>
                   {sendingShelves ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}
                   Send all {shelfLabels.length} to Print Station
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    const win = preparePrintWindow();
+                    setShelfStatus(null);
+                    try {
+                      const how = await openLabelsPdf(
+                        shelfLabels.map((s) => ({ code: s.code, title: s.title, subtitle: s.subtitle })),
+                        shelfFormat,
+                        win,
+                      );
+                      setShelfStatus(how === 'opened' ? 'Shelf labels opened as a PDF: print from that tab.' : 'Shelf labels downloaded as a PDF.');
+                    } catch (err) {
+                      setShelfStatus(`Could not make the labels: ${err instanceof Error ? err.message : 'error'}`);
+                    }
+                  }}
+                  disabled={shelfLabels.length === 0}
+                >
+                  <Printer className="h-4 w-4 mr-2" /> Print all here
                 </Button>
               </div>
               {shelfStatus && <p className="text-xs text-teal-700">{shelfStatus}</p>}

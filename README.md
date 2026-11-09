@@ -104,13 +104,24 @@ Labels are queued in Firestore (`printJobs`). Two things can print them:
    npm run package        # builds dist/packaged/*.dmg to install (right-click → Open the first time)
    ```
 
-   Printer names in `printers.json` must match `lpstat -p` exactly. Formats: `4x3` (Zebra ZD410),
-   `2.5x1.5` / `1.5x1.5` / `2.5x0.7` (Epson TM-C6000), `canon-integrated` (Letter sheets). The 2.5×1.5
-   Epson label fits the bin tag sleeves and the trays. Logs:
-   `~/Library/Logs/VialTrack Print Server/print-server.log`. Full details in [desktop/README.md](desktop/README.md).
+   Map each label size to a printer in the app (⚙ → Label sizes: printer, matching paper size, Test
+   print); it saves instantly. Formats: `4x3` (Zebra ZD410), `2.5x1.5` / `1.5x1.5` / `2.5x0.7`
+   (Epson TM-C6000), `canon-integrated` (Letter sheets). The 2.5×1.5 Epson label fits the bin tag
+   sleeves and the trays. The Mac checklist (keep it awake, add printers, map sizes) is in
+   [desktop/README.md](desktop/README.md#setting-up-the-mac-that-has-the-printers). Logs:
+   `~/Library/Logs/VialTrack Print Server/print-server.log`.
 
 2. **Print Station page** (fallback) — open **Print Station** in the web app on the computer wired to the
-   printers and leave the tab open; each job opens the browser print dialog.
+   printers and leave the tab open; each job opens the browser print dialog at the label's size.
+   It can run next to the Mac app: each job is claimed by one station and printed once.
+
+3. **Print here (AirPrint)** — no server needed: every print dialog in the web app can open the
+   label(s) as an exact-size PDF on the phone, iPad or Mac you're holding; print it to any AirPrint
+   or system printer. Batches (all tray labels of a bin, all shelf labels of a fridge) come as one
+   multi-page PDF.
+
+Print-job rule changes (job claiming, failed jobs) need `firestore.rules` published (§3); until then
+printing still works without claims.
 
 Verify with **Print Station → Send Test Print**. The in-app setup checklist on the dashboard has a
 "Set up label printing" step for exactly this.

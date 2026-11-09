@@ -1,76 +1,54 @@
-import { ipcMain, BrowserWindow } from 'electron';
-import { execSync } from 'node:child_process';
-import { dispatchPrintJob, type MinimalPrintJob } from './printDispatcher';
-import { getConfig, onConfigChange, saveConfig, type FormatConfig } from './configLoader';
-
-function summarizeFormats() {
-  const { formats } = getConfig();
-  const out: Record<string, unknown> = {};
-  for (const [key, cfg] of Object.entries(formats)) {
-    out[key] = {
-      cupsPrinter: cfg.cupsPrinter,
-      pageSize: cfg.pageSize,
-      margins: cfg.margins,
-      stickyRegion: cfg.stickyRegion,
-      lpOptions: cfg.lpOptions,
-    };
-  }
-  return out;
-}
+import { ipcMain, BrowserWindow, shell } from 'electron';
+import { dispatchPdf, type PrintPdfRequest } from './printDispatcher';
+import { getConfig, getConfigPath, onConfigChange, saveConfig, type FormatConfig } from './configLoader';
+import { listPrinters, printerMediaSizes } from './cups';
 
 export function registerIpc() {
-  ipcMain.handle('print-job', async (_event, job: MinimalPrintJob) => {
-    return dispatchPrintJob(job);
-  });
+  ipcMain.handle('print-pdf', async (_event, req: PrintPdfRequest) => dispatchPdf(req));
 
-  ipcMain.handle('config:get-formats', () => summarizeFormats());
+  ipcMain.handle('config:get-formats', () => getConfig().formats);
+
+  ipcMain.handle('config:get-path', () => getConfigPath());
 
   ipcMain.handle('config:save-formats', (_event, formats: Record<string, FormatConfig>) => {
     try {
-      saveConfig({ formats });
-      return { success: true };
-    } catch (e: any) {
-      return { success: false, error: e.message };
+      const saved = saveConfig({ formats });
+      return { success: true, formats: saved.formats };
+    } catch (e) {
+      return { success: false, error: e instanceof Error ? e.message : String(e) };
     }
   });
 
-  ipcMain.handle('system:list-printers', () => {
+  ipcMain.handle('system:list-printers', async () => {
     try {
-      const out = execSync('lpstat -p', { encoding: 'utf8' });
-      const printers: { device: string; status: string; model: string }[] = [];
-      for (const line of out.split('\n')) {
-        const match = line.trim().match(/printer (\S+)\s+(\S+)\s+(.+)/);
-        if (match) {
-          printers.push({ device: match[1], status: match[2], model: match[3] });
-        }
-      }
-      return printers;
+      return await listPrinters();
     } catch {
       return [];
     }
   });
 
-  ipcMain.handle('system:test-print', async (_event, format: string) => {
-    const cfg = getConfig().formats[format];
-    if (!cfg) {
-      return { success: false, error: `No config for format "${format}"` };
+  ipcMain.handle('system:printer-media', async (_event, device: string) => {
+    if (typeof device !== 'string' || !/^[^\s/#]{1,127}$/.test(device)) return [];
+    try {
+      return await printerMediaSizes(device);
+    } catch {
+      return [];
     }
-    const testJob: MinimalPrintJob = {
-      id: `test-${Date.now()}`,
-      code: 'TEST',
-      title: 'Alignment Test',
-      subtitle: `${format} @ ${cfg.pageSize.widthIn}"x${cfg.pageSize.heightIn}"`,
-      format,
-      status: 'pending',
-      createdAt: new Date().toISOString(),
-    };
-    return dispatchPrintJob(testJob);
   });
 
-  onConfigChange(() => {
-    const summary = summarizeFormats();
+  /** Opens System Settings → Printers & Scanners, where new printers are added on macOS. */
+  ipcMain.handle('system:open-printer-settings', async () => {
+    try {
+      await shell.openExternal('x-apple.systempreferences:com.apple.Print-Scanner-Settings.extension');
+      return true;
+    } catch {
+      return false;
+    }
+  });
+
+  onConfigChange((config) => {
     BrowserWindow.getAllWindows().forEach((win) => {
-      if (!win.isDestroyed()) win.webContents.send('config:reload', summary);
+      if (!win.isDestroyed()) win.webContents.send('config:reload', config.formats);
     });
   });
 }

@@ -11,28 +11,41 @@ export interface FormatConfigSummary {
 export interface PrintResult {
   success: boolean;
   error?: string;
+  requestId?: string;
 }
+
+export type PrinterState = 'idle' | 'printing' | 'disabled' | 'unknown';
 
 export interface CupsPrinter {
   device: string;
-  status: string;
-  model: string;
+  state: PrinterState;
+  enabled: boolean;
+  description: string;
+  detail: string;
+  isDefault: boolean;
+}
+
+export interface MediaSize {
+  key: string;
+  option: string;
+  widthIn?: number;
+  heightIn?: number;
+  isDefault: boolean;
 }
 
 declare global {
   interface Window {
     printServer: {
-      printJob: (job: PrintJob) => Promise<PrintResult>;
+      printPdf: (req: { jobId: string; format: string; title: string; pdfBase64: string }) => Promise<PrintResult>;
       getFormats: () => Promise<Record<string, FormatConfigSummary>>;
-      saveFormats: (formats: Record<string, FormatConfigSummary>) => Promise<PrintResult>;
+      getConfigPath: () => Promise<string | null>;
+      saveFormats: (
+        formats: Record<string, FormatConfigSummary>,
+      ) => Promise<{ success: boolean; error?: string; formats?: Record<string, FormatConfigSummary> }>;
       onConfigReload: (cb: (next: Record<string, FormatConfigSummary>) => void) => () => void;
-      getRenderJob: () => Promise<PrintJob | null>;
-      getStickyRegion: (
-        format: string,
-      ) => Promise<{ xIn: number; yIn: number; widthIn: number; heightIn: number } | null>;
-      signalRenderReady: () => void;
       listPrinters: () => Promise<CupsPrinter[]>;
-      testPrint: (format: string) => Promise<PrintResult>;
+      printerMedia: (device: string) => Promise<MediaSize[]>;
+      openPrinterSettings: () => Promise<boolean>;
     };
   }
 }

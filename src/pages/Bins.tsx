@@ -60,6 +60,7 @@ import {
   type TrayRecord,
 } from '../lib/inventory';
 import { LABEL_FORMAT_OPTIONS, sendPrintJobs } from '../lib/printing';
+import { openLabelsPdf, preparePrintWindow } from '../lib/localPrint';
 import { basketNeedsRepair, repairLegacyData } from '../lib/repair';
 import type { LabelFormat } from '../shared/types';
 
@@ -399,6 +400,27 @@ export default function Bins() {
 
   const printTrayLabel = (bin: BinRecord, t: TrayRecord) => {
     setPrintData({ code: trayQrCode(t.id), title: trayTitle(bin, t), subtitle: trayLabelSubtitle(t) });
+  };
+
+  /** Tray labels as one exact-size PDF for this device's print dialog (AirPrint). */
+  const printTrayLabelsHere = async (bin: BinRecord) => {
+    const active = activeTrays(detailTrays);
+    if (active.length === 0) {
+      setLabelStatus('Add trays to this bin first.');
+      return;
+    }
+    const win = preparePrintWindow();
+    setLabelStatus(null);
+    try {
+      const how = await openLabelsPdf(
+        active.map((t) => ({ code: trayQrCode(t.id), title: trayTitle(bin, t), subtitle: trayLabelSubtitle(t) })),
+        trayLabelFormat,
+        win,
+      );
+      setLabelStatus(how === 'opened' ? `${active.length} tray labels opened as a PDF: print from that tab.` : 'Tray labels downloaded as a PDF.');
+    } catch (err) {
+      setLabelStatus(`Could not make the labels: ${err instanceof Error ? err.message : 'error'}`);
+    }
   };
 
   const sendTrayLabels = async (bin: BinRecord) => {
@@ -1043,6 +1065,9 @@ export default function Bins() {
                   >
                     {sendingLabels ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}
                     Send {detailActive.length} tray label{detailActive.length === 1 ? '' : 's'}
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => void printTrayLabelsHere(detailBin)} disabled={detailActive.length === 0}>
+                    <Printer className="h-4 w-4 mr-2" /> Print here
                   </Button>
                 </div>
                 <p className="text-[11px] text-gray-500">
