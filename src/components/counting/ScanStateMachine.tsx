@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { collection, getCountFromServer } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useCountingSession } from '../../contexts/CountingSessionContext';
+import { useVoiceHandler } from '../../contexts/VoiceCommandContext';
 import { useLocations } from '../../hooks/useLocations';
 import { describeShelf, isReusableLabelId, parseShelfId } from '../../lib/inventory';
 import { QuickCreateFridge } from '../QuickCreate';
@@ -13,6 +14,8 @@ export default function ScanStateMachine() {
   const { nameOf, byId, loading: locationsLoading } = useLocations();
   const [binCount, setBinCount] = useState<number | null>(null);
   const [addingFridge, setAddingFridge] = useState(false);
+
+  useVoiceHandler(() => ({ ok: false, message: 'Open a bin first: scan its label, or say "bin" and its name.' }));
 
   // Nudge first-time users toward setup instead of leaving them with a camera and nothing to scan.
   useEffect(() => {
@@ -48,6 +51,7 @@ export default function ScanStateMachine() {
         <p className="text-base font-medium text-gray-800">Ready to scan</p>
         <p className="text-sm mt-1">Step 1: scan the shelf label. Step 2: scan the bin's QR. Then tap each tray to count it.</p>
         <p className="text-xs mt-2 text-gray-400">Tray labels jump straight to that tray. No camera? Use the keyboard button to type a code.</p>
+        <p className="text-xs mt-1 text-gray-400">Hands busy? Tap the mic and say "shelf 2", then "bin" and the product name.</p>
       </div>
     );
   }

@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { db, handleFirestoreError, OperationType } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCountingSession } from '../../contexts/CountingSessionContext';
+import { useVoiceHandler } from '../../contexts/VoiceCommandContext';
 import { Button } from '../ui/button';
 import {
   activeTrays,
@@ -15,6 +16,7 @@ import {
   hasBeenCounted,
   liveBasketTotal,
   MAX_TRAYS_PER_BIN,
+  nextUncountedTray,
   setAllTraysFull,
   traysCountedInSession,
   updateBasket,
@@ -144,35 +146,43 @@ export default function BasketDetail({
     }
   };
 
-  const handleAddTray = async () => {
-    if (!user) return;
+  /** Adds `n` blank trays; a single new tray opens straight away for counting. Returns how many were added. */
+  const handleAddTray = async (n = 1): Promise<number> => {
+    if (!user) return 0;
+    const room = Math.max(0, MAX_TRAYS_PER_BIN - activeTrays(trays).length);
+    const howMany = Math.min(n, room);
+    if (howMany === 0) return 0;
     setAddingTray(true);
     try {
-      const [id] = await createTrays({
+      const ids = await createTrays({
         basketId: basket.id,
         productId: basket.productId,
         capacity: basket.vialsPerTray,
         userId: user.uid,
         existing: trays,
-        items: [{}],
+        items: Array.from({ length: howMany }, () => ({})),
         sessionId,
       });
-      if (id) onTrayAdded(id);
+      if (ids.length === 1) onTrayAdded(ids[0]);
+      return ids.length;
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'trays');
+      return 0;
     } finally {
       setAddingTray(false);
     }
   };
 
-  const handleAllFull = async () => {
-    if (!user) return;
+  const handleAllFull = async (): Promise<boolean> => {
+    if (!user) return false;
     setBulkSaving(true);
     try {
       await setAllTraysFull({ basketId: basket.id, trays, userId: user.uid, sessionId });
       onAllFull();
+      return true;
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'trays');
+      return false;
     } finally {
       setBulkSaving(false);
     }
@@ -184,6 +194,87 @@ export default function BasketDetail({
   const useFirst = useMemo(() => useFirstTrayId(trays), [trays]);
   const busy = bulkSaving || finishing;
   const gridCols = active.length <= 6 ? 3 : active.length <= 12 ? 4 : 5;
+
+  // Voice from the tray grid: "tray 3 [22 save]", "next", "loose 12", "all full", "add tray", "finish".
+  useVoiceHandler(async (cmds) => {
+    if (busy || addingTray) return { ok: false, message: 'Still saving. Try again in a moment.' };
+    const said: string[] = [];
+    const reply = (extra: string) => [...said, extra].filter(Boolean).join(' ');
+    let looseNow = clampInt(basket.looseVials);
+    for (let k = 0; k < cmds.length; k++) {
+      const c = cmds[k];
+      const rest = cmds.slice(k + 1);
+      switch (c.kind) {
+        case 'tray': {
+          const t = active.find((x) => x.slot === c.slot);
+          if (!t) {
+            return {
+              ok: false,
+              message: reply(active.length ? `No tray ${c.slot} here; this bin has trays 1 to ${active.length}.` : 'This bin has no trays yet. Say "add tray".'),
+            };
+          }
+          onSelectTray(t.id);
+          return { message: reply(`Tray ${t.slot}.`), forward: rest };
+        }
+        case 'next': {
+          const t = nextUncountedTray(trays, sessionId, null);
+          if (!t) {
+            said.push('Every tray is counted. Say "finish".');
+            break;
+          }
+          onSelectTray(t.id);
+          return { message: reply(`Tray ${t.slot}.`), forward: rest };
+        }
+        case 'loose':
+          setSavingLayout(true);
+          try {
+            await updateBasket(basket.id, { looseVials: c.value });
+          } catch (error) {
+            handleFirestoreError(error, OperationType.UPDATE, `baskets/${basket.id}`);
+            return { ok: false, message: reply('Could not save the loose count.') };
+          } finally {
+            setSavingLayout(false);
+          }
+          looseNow = c.value;
+          said.push(`Loose: ${c.value}.`);
+          break;
+        case 'allFull': {
+          if (active.length === 0) return { ok: false, message: reply('This bin has no trays yet. Say "add tray".') };
+          const n = active.length;
+          if (!(await handleAllFull())) return { ok: false, message: reply('Could not mark the trays full.') };
+          return { message: reply(`All ${n} trays full. Bin finished: scan the shelf or say "shelf" and its number to put it back.`), forward: rest };
+        }
+        case 'addTray': {
+          const added = await handleAddTray(c.n);
+          if (added === 0) return { ok: false, message: reply(`Could not add a tray (a bin holds up to ${MAX_TRAYS_PER_BIN}).`) };
+          if (added === 1) return { message: reply(`Added tray ${active.length + 1}.`), forward: rest };
+          said.push(`Added ${added} trays.`);
+          break;
+        }
+        case 'save':
+        case 'finish': {
+          if (!traysLoaded || (active.length > 0 && counted === 0 && looseNow === 0)) {
+            return { ok: false, message: reply('Count at least one tray first, or say "all full".') };
+          }
+          onFinish();
+          return { message: reply('Bin finished: scan the shelf or say "shelf" and its number to put it back.'), forward: rest };
+        }
+        case 'count':
+        case 'full':
+        case 'empty':
+        case 'adjust':
+          return { ok: false, message: reply('Say which tray first, e.g. "tray 3 twenty two".') };
+        case 'trayTotal':
+          return { ok: false, message: reply('Trays are counted one at a time: "tray 1 full next", or "all full" if every tray is full.') };
+        case 'cancel':
+          said.push('Scan another bin, or say "bin" and its name.');
+          break;
+        default:
+          break;
+      }
+    }
+    return { message: said.join(' ') };
+  });
 
   return (
     <div className="flex h-full flex-col px-4 py-2">
@@ -237,7 +328,7 @@ export default function BasketDetail({
           variant="outline"
           size="sm"
           className="h-8 px-2"
-          onClick={handleAddTray}
+          onClick={() => void handleAddTray()}
           disabled={addingTray || busy || active.length >= MAX_TRAYS_PER_BIN}
           title="A tray was added to this bin"
         >
@@ -330,7 +421,7 @@ export default function BasketDetail({
         <Button
           variant="outline"
           className="h-11 px-1 border-teal-300 text-teal-800"
-          onClick={handleAllFull}
+          onClick={() => void handleAllFull()}
           disabled={busy || active.length === 0}
         >
           {bulkSaving ? (

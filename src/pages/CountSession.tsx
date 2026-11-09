@@ -6,6 +6,8 @@ import { Button } from '../components/ui/button';
 import { CountingSessionProvider, useCountingSession } from '../contexts/CountingSessionContext';
 import BottomPanel from '../components/counting/BottomPanel';
 import CameraHUD from '../components/counting/CameraHUD';
+import VoiceBar from '../components/counting/VoiceBar';
+import { VoiceCommandProvider } from '../contexts/VoiceCommandContext';
 import { SessionReview } from '../components/counting/SessionReview';
 import { CapColorMap, loadAppSettings } from '../lib/config';
 import { useLocations } from '../hooks/useLocations';
@@ -202,8 +204,9 @@ function CountSessionLayout() {
   return (
     <div className="fixed inset-0 flex flex-col bg-black overflow-hidden">
       <TopBar onEndSession={() => setShowReview(true)} />
-      <div className="flex-1 min-h-0 basis-[55%]">
+      <div className="relative flex-1 min-h-0 basis-[55%] overflow-hidden">
         <CameraView />
+        <VoiceBar />
       </div>
       <div className="basis-[45%] min-h-0 pb-safe bg-white">
         <BottomPanel />
@@ -215,7 +218,9 @@ function CountSessionLayout() {
 export default function CountSession() {
   return (
     <CountingSessionProvider>
-      <CountSessionLayout />
+      <VoiceCommandProvider>
+        <CountSessionLayout />
+      </VoiceCommandProvider>
     </CountingSessionProvider>
   );
 }

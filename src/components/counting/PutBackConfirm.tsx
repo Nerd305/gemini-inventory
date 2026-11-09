@@ -4,6 +4,7 @@ import { CheckCircle2, AlertTriangle, ArrowLeft, Loader2 } from 'lucide-react';
 import { db, handleFirestoreError, OperationType } from '../../firebase';
 import { Button } from '../ui/button';
 import { useCountingSession, type ParsedScan } from '../../contexts/CountingSessionContext';
+import { useVoiceHandler } from '../../contexts/VoiceCommandContext';
 import { useLocations } from '../../hooks/useLocations';
 import { describeShelf } from '../../lib/inventory';
 
@@ -34,6 +35,15 @@ export default function PutBackConfirm({
   const [outcome, setOutcome] = useState<Outcome>({ kind: 'waiting' });
   const [moving, setMoving] = useState(false);
   const baselineRef = useRef<ParsedScan | null>(lastScan);
+
+  // Voice: "shelf 3" is handled like a scan by the voice provider; "back" returns to the bin.
+  useVoiceHandler((cmds) => {
+    if (cmds.some((c) => c.kind === 'cancel')) {
+      onBackToBasket();
+      return { message: 'Back to the bin.' };
+    }
+    return { ok: false, message: 'Scan the shelf label, or say "shelf" and its number, to put the bin back.' };
+  });
   const completeTimerRef = useRef<number | null>(null);
 
   useEffect(() => {

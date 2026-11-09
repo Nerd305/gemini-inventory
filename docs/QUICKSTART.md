@@ -40,13 +40,17 @@ as a spreadsheet or over an API.
 The dashboard shows **Setup progress**; each step tells you where to go and ticks itself off.
 
 1. **Locations** → Add Location → name the fridge, type *Refrigerator*, shelf count (top → bottom).
+   (Fridges typed into the old *Settings → Fridge Configuration* list never reached Locations; Settings
+   now offers to copy them over.)
 2. **Set up label printing** → Print Station → *Send Test Print*. If nothing prints, see §8.
 3. **Locations** → *Shelf labels* on the fridge → *Send all to Print Station*. Stick one on the front
    edge of each shelf.
 4. **Items (Products)** → Add Product for every product you stock. Name them the way the bin tags read
    ("TIRZ 40 mg/mL 5mL").
 5. **Bins** → Add Bin for every basket: product, fridge, shelf, how many trays are in it right now,
-   vials per tray (25). *Save & Print Label* → slide the label into the bin's tag sleeve.
+   vials per tray (25). *Save & Print Label* → slide the label into the bin's tag sleeve. Product or
+   fridge not in the list yet? Pick **+ New product…** / **+ New fridge…** at the bottom of the
+   dropdown and add it right there.
 6. **Register trays** (this is what powers FIFO): open the bin → *Add tray* → *Photograph the label*.
    The AI reads lot, date compounded and BUD; check and save. Repeat per tray. Or add blank trays and
    let the label get captured during the first count.
@@ -76,7 +80,31 @@ The dashboard shows **Setup progress**; each step tells you where to go and tick
 
 Tips: the keyboard icon lets you type a code if the camera cannot read a label. Scanning a tray label
 opens that tray directly, even before scanning the bin. Two people can count at the same time; the
-app warns if someone already has a bin open.
+app warns if someone already has a bin open. A bin label with no bin behind it (or a shelf label whose
+fridge was deleted) opens a short form so you can set it up on the spot; the printed label keeps working.
+
+### Voice counting (hands busy)
+
+Tap the round **mic** over the camera and talk; tap the **chat bubble** to type the same words instead
+(the keyboard's own mic key dictates into it).
+
+| Say | What happens |
+| --- | --- |
+| "shelf 2" · "fridge peptides shelf 2" | Same as scanning that shelf label |
+| "bin tirz" · "bin BPC 157" | Opens the bin whose name or product matches (bins on the current shelf win) |
+| "tray 3" · "next" | Opens tray 3 / the next uncounted tray |
+| "22" · "full" · "empty" · "plus 2" | Sets the open tray's count (nothing is saved yet) |
+| "save" · "done" · "ok" | Saves the open tray. From the tray grid it finishes the bin |
+| "next" (in a tray) | Saves this tray and opens the next uncounted one |
+| "tray 3 twenty two save" · "tray 1 full next" | Chain them in one breath |
+| "loose 12" · "all full" · "add tray" · "finish" | Bin-level actions from the tray grid |
+| "back" · "help" | Close the tray without saving · list examples |
+
+Anything the app does not understand goes to **Gemini**, which turns the sentence into these commands
+(you'll see a purple *Gemini* tag). Gemini never saves on its own: unless you actually said "save",
+"next", "done" and so on, it only fills in the number. Where the phone's own speech recognition is
+blocked (some home-screen apps), the mic switches to **Gemini listening**: tap, speak, tap again to
+send. You can switch between *Phone* and *Gemini* listening under the chat bubble.
 
 ## 6. FIFO: which tray to use
 
@@ -138,12 +166,18 @@ Work through these and note anything surprising.
 - [ ] Reports → Excel workbook opens with all six sheets; API `/api/v1/summary` returns numbers.
 - [ ] Leave the count page mid-way: the session shows as paused on the dashboard and disappears
       after 24 h.
+- [ ] Voice on the counting phone: "shelf 2", "bin <product>", "tray 1 twenty two save", "next",
+      "all full". Then try a sloppy sentence ("this one's got twenty, no, twenty-one") and check the
+      Gemini tag. Try it from the home-screen icon too (that is where Gemini listening kicks in).
+- [ ] Add Bin with a brand-new product and a brand-new fridge using the "+ New …" options.
+- [ ] Scan a bin label printed for a bin that was deleted: the setup form appears and counting continues.
 
 ## 11. Tuning knobs (where to change things)
 
 | Want to change | File |
 | --- | --- |
 | The AI counting prompt or the label-reading prompt | `src/lib/ai.ts` (`countVialsInTray`, `readCompoundingLabel`) |
+| Voice words and phrases | `src/lib/voiceCommands.ts` (local parser), `src/lib/ai.ts` (`interpretCountVoice`, Gemini fallback) |
 | BUD warning window (30 days), default tray size (25) | `src/lib/inventory.ts` (`BUD_WARNING_DAYS`, `DEFAULT_VIALS_PER_TRAY`) |
 | Dashboard expiring window (60 days), stale bin threshold (7 days) | `src/pages/Dashboard.tsx` |
 | Label layouts and sizes | `src/shared/LabelContent.tsx`, `src/lib/printing.ts`, `desktop/config/printers.json` |

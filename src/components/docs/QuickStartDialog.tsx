@@ -11,7 +11,7 @@ export const OPEN_QUICKSTART_EVENT = 'vialtrack:open-quickstart';
 
 const STORAGE_KEY = 'vialtrack.quickstart.seen';
 /** Bump when the guide changes enough that everyone should see it again on launch. */
-export const QUICKSTART_REVISION = '2026-09-30';
+export const QUICKSTART_REVISION = '2026-11-09';
 
 // The guide is the same file that lives in the repo (docs/QUICKSTART.md), bundled as text and
 // rendered on demand so it stays out of the main bundle.

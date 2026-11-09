@@ -183,8 +183,8 @@ export default function BottomPanel() {
     setPutBack({ basketId: basket.id, expectedShelfId: basket.shelfId, productName: basket.productName });
   }, [basket, user, sessionId]);
 
-  // After a tray is accepted: continue the AI sequence, or finish the bin when the last tray is done.
-  const handleAcceptTray = (trayId: string, count: number) => {
+  // After a tray is accepted: continue the AI sequence (or voice "next"), or finish the bin when the last tray is done.
+  const handleAcceptTray = (trayId: string, count: number, opts?: { next?: boolean }) => {
     if (!basket) {
       setSelectedTrayId(null);
       return;
@@ -197,7 +197,7 @@ export default function BottomPanel() {
       void startPutBack();
       return;
     }
-    if (!aiSequence) {
+    if (!aiSequence && !opts?.next) {
       setSelectedTrayId(null);
       return;
     }
@@ -233,6 +233,7 @@ export default function BottomPanel() {
     return (
       <div className={panelClass}>
         <TrayCount
+          key={selectedTray.id}
           tray={selectedTray}
           position={active.findIndex((t) => t.id === selectedTray.id) + 1}
           total={active.length}

@@ -287,3 +287,54 @@ export async function readCompoundingLabel(base64Image: string): Promise<TrayLab
   };
   return Object.values(candidate).some((v) => v !== null) ? candidate : null;
 }
+
+// ---------------------------------------------------------------------------
+// Voice commands in /count (src/lib/voiceCommands.ts parses the easy ones locally;
+// Gemini gets the sentences it can't, and the audio when the browser can't transcribe)
+// ---------------------------------------------------------------------------
+
+export interface VoiceInterpretation {
+  /** The words Gemini heard (audio) or was given (text). */
+  transcript: string;
+  /** Unvalidated command objects; run them through coerceVoiceCommands before use. */
+  commands: unknown[];
+}
+
+const VOICE_PROMPT =
+  'You turn what a pharmacy technician says while counting vials into commands for an inventory app. ' +
+  'They work fridge -> shelf -> bin (one product per bin) -> trays (usually 25 vials per tray, counted one tray at a time). ' +
+  'Return ONLY JSON: {"transcript": string, "commands": Command[]}. "transcript" is exactly what was said, in plain words. ' +
+  'Command is one of: ' +
+  '{"kind":"count","value":N} vials in the open tray; ' +
+  '{"kind":"adjust","delta":N} add or take away N (negative to take away); ' +
+  '{"kind":"full"} the open tray is full; {"kind":"empty"} the open tray is empty; ' +
+  '{"kind":"save"} accept the open tray, or finish the bin from the tray grid; ' +
+  '{"kind":"next"} save and open the next uncounted tray; {"kind":"cancel"} close without saving; ' +
+  '{"kind":"tray","slot":N} open tray number N; {"kind":"loose","value":N} loose vials in the bin (not in a tray); ' +
+  '{"kind":"allFull"} every tray in the bin is full; {"kind":"addTray","n":N} add N trays to the bin; ' +
+  '{"kind":"finish"} the bin is done; {"kind":"shelf","shelf":N,"fridge":"name"} go to a shelf (omit fridge if not said); ' +
+  '{"kind":"bin","query":"words"} open the bin named by those words (product or bin name); {"kind":"help"}. ' +
+  'Rules: keep the order they were said; numbers are whole numbers; when someone corrects themselves ("twenty, no, twenty-one") keep only the final value; ' +
+  'only include save, next, finish, allFull or addTray when they clearly asked for it; if nothing fits, return an empty commands list.';
+
+export async function interpretCountVoice(
+  input: { text: string } | { audioBase64: string; mimeType: string },
+): Promise<VoiceInterpretation> {
+  // `await` works whether getClient returns the client or a promise of it.
+  const client = await getClient();
+  const parts =
+    'text' in input
+      ? [{ text: `${VOICE_PROMPT}\n\nWhat they said: ${JSON.stringify(input.text.slice(0, 500))}` }]
+      : [{ text: `${VOICE_PROMPT}\n\nThe audio clip is what they said.` }, { inlineData: { data: input.audioBase64, mimeType: input.mimeType } }];
+  const response = await client.models.generateContent({
+    model: 'gemini-2.5-flash',
+    contents: [{ role: 'user', parts }],
+    config: { responseMimeType: 'application/json', temperature: 0 },
+  });
+  if (!response.text) throw new Error('Gemini returned nothing for that.');
+  const parsed = JSON.parse(response.text) as { transcript?: unknown; commands?: unknown };
+  return {
+    transcript: typeof parsed.transcript === 'string' ? parsed.transcript.trim() : 'text' in input ? input.text : '',
+    commands: Array.isArray(parsed.commands) ? parsed.commands : [],
+  };
+}

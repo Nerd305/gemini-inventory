@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { handleFirestoreError, OperationType } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCountingSession } from '../../contexts/CountingSessionContext';
+import { useVoiceHandler } from '../../contexts/VoiceCommandContext';
 import { Button } from '../ui/button';
 import { countVialsInTray } from '../../lib/ai';
 import { saveLearningRecord } from '../../lib/learning';
@@ -27,7 +28,8 @@ interface TrayCountProps {
   allTrays: TrayRecord[];
   productId: string;
   useFirst: boolean;
-  onAccept: (trayId: string, count: number) => void;
+  /** `next`: open the next uncounted tray afterwards (voice "next"). */
+  onAccept: (trayId: string, count: number, opts?: { next?: boolean }) => void;
   onCancel: () => void;
   onRemoved: () => void;
   sequenceLabel?: string;
@@ -137,13 +139,15 @@ export default function TrayCount({
     }
   };
 
-  const handleAccept = async () => {
-    if (!user) return;
+  /** Save the tray. `override` lets voice save a count it set in the same sentence ("22 save"). */
+  const handleAccept = async (override?: number, opts?: { next?: boolean }): Promise<boolean> => {
+    if (!user) return false;
+    const value = override ?? count;
     setSaving(true);
     try {
       await recordTrayCount({
         tray,
-        count,
+        count: value,
         userId: user.uid,
         sessionId,
         aiPrediction: aiPredictionRef.current,
@@ -153,17 +157,19 @@ export default function TrayCount({
       // Save learning record in background
       saveLearningRecord({
         imageBase64: lastImageRef.current,
-        aiPrediction: aiPredictionRef.current || undefined,
-        userFinalCount: count,
+        aiPrediction: aiPredictionRef.current ?? undefined,
+        userFinalCount: value,
         productId,
         trayId: tray.id,
         basketId: tray.basketId,
         userId: user.uid,
       });
 
-      onAccept(tray.id, count);
+      onAccept(tray.id, value, opts);
+      return true;
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, `trays/${tray.id}`);
+      return false;
     } finally {
       setSaving(false);
     }
@@ -182,6 +188,67 @@ export default function TrayCount({
       setRemoving(false);
     }
   };
+
+  // Voice: "22", "full", "empty", "plus 2", then "save" / "next"; "back" closes the tray.
+  useVoiceHandler(async (cmds) => {
+    if (saving || removing) return { ok: false, message: 'Still saving the last tray. Try again in a moment.' };
+    const label = `Tray ${tray.slot}`;
+    let next = count;
+    let changed = false;
+    for (let k = 0; k < cmds.length; k++) {
+      const c = cmds[k];
+      switch (c.kind) {
+        case 'count':
+          next = c.value;
+          changed = true;
+          break;
+        case 'full':
+          next = capacity;
+          changed = true;
+          break;
+        case 'empty':
+          next = 0;
+          changed = true;
+          break;
+        case 'adjust':
+          next = Math.max(0, next + c.delta);
+          changed = true;
+          break;
+        case 'save':
+        case 'next': {
+          setCount(next);
+          const saved = await handleAccept(next, { next: c.kind === 'next' });
+          if (!saved) return { ok: false, message: `${label}: could not save. Check the connection and try again.` };
+          return { message: `${label}: ${next} saved.`, forward: cmds.slice(k + 1) };
+        }
+        case 'cancel':
+          onCancel();
+          return { message: `Closed ${label.toLowerCase()} without saving.`, forward: cmds.slice(k + 1) };
+        case 'tray':
+          if (c.slot === tray.slot) break;
+          if (changed) {
+            setCount(next);
+            return { ok: false, message: `${label} is set to ${next} but not saved. Say "save" first, or "back" to drop it.` };
+          }
+          onCancel();
+          return { message: '', forward: cmds.slice(k) };
+        case 'trayTotal':
+          return { ok: false, message: 'Trays are counted one at a time: say the number for this tray, then "save" or "next".' };
+        case 'loose':
+        case 'allFull':
+        case 'addTray':
+        case 'finish':
+          if (changed) setCount(next);
+          return { ok: false, message: `Save ${label.toLowerCase()} first ("save"), then say that again.` };
+        default:
+          break;
+      }
+    }
+    if (!changed) return { message: '' };
+    setCount(next);
+    const warn = next > capacity ? ` That's more than a full tray (${capacity}).` : '';
+    return { message: `${label}: ${next}.${warn} Say "save" or "next".` };
+  });
 
   const dec = (n: number) => setCount((c) => Math.max(0, c - n));
   const inc = (n: number) => setCount((c) => c + n);
@@ -355,7 +422,7 @@ export default function TrayCount({
         </Button>
         <Button
           className="flex-1 h-12 text-base bg-teal-600 hover:bg-teal-700 text-white"
-          onClick={handleAccept}
+          onClick={() => void handleAccept()}
           disabled={saving || removing}
         >
           {saving ? <Loader2 className="h-5 w-5 animate-spin" /> : <><Check className="h-5 w-5 mr-2" /> Accept {count}</>}

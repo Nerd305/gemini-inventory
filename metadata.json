@@ -2,7 +2,8 @@
   "name": "VialTrack AI",
   "description": "AI-powered medication inventory management system with QR scanning, stock forecasting, and automated categorization.",
   "requestFramePermissions": [
-    "camera"
+    "camera",
+    "microphone"
   ],
   "capabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

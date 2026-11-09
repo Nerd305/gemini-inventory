@@ -25,14 +25,19 @@ export type LearningRecord = {
 };
 
 export async function saveLearningRecord(record: Omit<LearningRecord, 'timestamp' | 'delta'>) {
+  // A sample is only useful for training with the photo and the AI's guess. Manual counts have
+  // neither; writing them failed on the undefined photo field and would skew the accuracy stats.
+  if (!record.imageBase64 || typeof record.aiPrediction !== 'number') return false;
   try {
     const fullRecord: LearningRecord = {
       ...record,
-      delta: record.userFinalCount - (record.aiPrediction || 0),
+      delta: record.userFinalCount - record.aiPrediction,
       timestamp: new Date().toISOString()
     };
+    // Firestore rejects undefined values.
+    const clean = Object.fromEntries(Object.entries(fullRecord).filter(([, v]) => v !== undefined));
 
-    await addDoc(collection(db, 'learningData'), fullRecord);
+    await addDoc(collection(db, 'learningData'), clean);
     return true;
   } catch (error) {
     console.error('Failed to save learning record', error);
